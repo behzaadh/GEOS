@@ -176,7 +176,12 @@ void SinglePhaseWell::registerWellDataOnMesh( WellElementSubRegion & subRegion )
     makeDirsForPath( m_ratesOutputDir );
     GEOS_LOG( GEOS_FMT( "{}: Rates CSV generated at {}", getName(), fileName ) );
     std::ofstream outputFile( fileName );
-    outputFile << "Time [s],BHP [Pa],Total rate [kg/s],Total " << conditionKey << " volumetric rate ["<<unitKey<<"m3/s]" << std::endl;
+    outputFile << "Time [s],BHP [Pa]";
+    if( isThermal() )
+    {
+      outputFile << ",BHT [K]";
+    }
+    outputFile << ",Total rate [kg/s],Total " << conditionKey << " volumetric rate ["<<unitKey<<"m3/s]" << std::endl;
     outputFile.close();
   }
 
@@ -1382,39 +1387,59 @@ void SinglePhaseWell::printRates( real64 const & time_n,
     if( outputFile.is_open())
     {
       // print all zeros in the rates file
-      outputFile << ",0.0,0.0,0.0" << std::endl;
+      outputFile << ",0.0";
+      if( isThermal() )
+      {
+        outputFile << ",0.0";
+      }
+      outputFile << ",0.0,0.0" << std::endl;
       outputFile.close();
     }
     return;
   }
 
   integer const useSurfaceCond =  useSurfaceConditions();
+  integer const thermalFlag = isThermal();
 
   real64 const & currentBHP =
     getReference< real64 >( WellControls::viewKeyStruct::currentBHPString() );
   real64 const & currentTotalVolRate =
     getReference< real64 >( WellControls::viewKeyStruct::currentVolRateString() );
+  arrayView1d< real64 const > const wellElemTemperature =
+    subRegion.getField< well::temperature >();
 
   // bring everything back to host, capture the scalars by reference
   forAll< serialPolicy >( 1, [&useSurfaceCond,
                               &currentBHP,
                               connRate,
+                              wellElemTemperature,
                               &currentTotalVolRate,
                               &iwelemRef,
                               &wellControlsName,
+                              &thermalFlag,
                               &outputFile] ( localIndex const )
   {
     string const conditionKey = useSurfaceCond ? "surface" : "reservoir";
     string const unitKey = useSurfaceCond ? "s" : "r";
 
     real64 const currentTotalRate = connRate[iwelemRef];
+    real64 const currentBHT = wellElemTemperature[iwelemRef];
     GEOS_LOG( GEOS_FMT( "{}: BHP (at the specified reference elevation): {} Pa",
                         wellControlsName, currentBHP ) );
+    if( thermalFlag )
+    {
+      GEOS_LOG( GEOS_FMT( "{}: BHT (at the specified reference elevation): {} K",
+                          wellControlsName, currentBHT ) );
+    }
     GEOS_LOG( GEOS_FMT( "{}: Total rate: {} kg/s; total {} volumetric rate: {} {}m3/s",
                         wellControlsName, currentTotalRate, conditionKey, currentTotalVolRate, unitKey ) );
     if( outputFile.is_open())
     {
       outputFile << "," << currentBHP;
+      if( thermalFlag )
+      {
+        outputFile << "," << currentBHT;
+      }
       outputFile << "," << currentTotalRate << "," << currentTotalVolRate << std::endl;
       outputFile.close();
     }

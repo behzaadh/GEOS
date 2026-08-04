@@ -148,12 +148,13 @@ def main(calling_script, args, unknown_args):
 
     build_path = os.path.abspath(build_path)
 
-    if os.path.exists(build_path):
-        logging.info("Build directory '%s' already exists. Deleting..." % build_path)
-        shutil.rmtree(build_path)
+    # if os.path.exists(build_path):
+    #     logging.info("Build directory '%s' already exists. Deleting..." % build_path)
+    #     shutil.rmtree(build_path)
 
-    logging.info("Creating build directory '%s'..." % build_path)
-    os.makedirs(build_path)
+    if not os.path.exists(build_path):
+        logging.info("Creating build directory '%s'..." % build_path)
+        os.makedirs(build_path)
 
     #####################
     # Setup Install Dir

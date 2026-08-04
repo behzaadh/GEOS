@@ -298,6 +298,14 @@ DECLARE_FIELD( hardening,
                WRITE_AND_READ,
                "Hardening rate" );
 
+DECLARE_FIELD( relaxationTime,
+               "relaxationTime",
+               array1d< real64 >,
+               0,
+               NOPLOT,
+               WRITE_AND_READ,
+               "Duvaut-Lions viscoplastic relaxation time (per element)" );
+
 DECLARE_FIELD( cohesion,
                "cohesion",
                array2d< real64 >,

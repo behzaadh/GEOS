@@ -111,7 +111,8 @@ public:
     {
       bool const localScaling = m_scalingType == compositionalMultiphaseUtilities::ScalingType::Local;
       // compute the change in temperature
-      real64 const newTemp = m_temperature[ei] + (localScaling ? m_temperatureScalingFactor[ei] : m_scalingFactor * m_localSolution[stack.localRow + m_temperatureOffset]);
+      real64 const tempScale = localScaling ? m_temperatureScalingFactor[ei] : m_scalingFactor;
+      real64 const newTemp = m_temperature[ei] + tempScale * m_localSolution[stack.localRow + m_temperatureOffset];
       if( newTemp < minTemperature )
       {
         stack.localMinVal = 0;

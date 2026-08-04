@@ -30,6 +30,7 @@
 #include "physicsSolvers/fluidFlow/CompositionalMultiphaseStatisticsAggregator.hpp"
 #include "physicsSolvers/fluidFlow/wells/CompositionalMultiphaseWell.hpp"
 #include "physicsSolvers/fluidFlow/wells/WellControls.hpp"
+#include "physicsSolvers/fluidFlow/wells/WellManager.hpp"
 #include "physicsSolvers/fluidFlow/wells/kernels/CompositionalMultiphaseWellKernels.hpp"
 #include "physicsSolvers/multiphysics/MultiphasePoromechanics.hpp"
 
@@ -160,11 +161,19 @@ initializePreSubGroups()
 
   bool const isThermalFlow = flowSolver->getReference< integer >( CompositionalMultiphaseBase::viewKeyStruct::isThermalString() );
   bool const isThermalWell = Base::wellSolver()->template getReference< integer >( WellManager::viewKeyStruct::isThermalString() );
-  GEOS_THROW_IF( isThermalFlow != isThermalWell,
-                 GEOS_FMT( "The input flag {} must be the same in the flow and well solvers, respectively '{}' and '{}'",
-                           CompositionalMultiphaseBase::viewKeyStruct::isThermalString(),
-                           Base::reservoirSolver()->getName(), Base::wellSolver()->getName() ),
+  GEOS_THROW_IF( isThermalWell && !isThermalFlow,
+                 GEOS_FMT( "Well solver '{}' has {}=1 but reservoir solver '{}' has {}=0. "
+                           "A thermal well requires a thermal reservoir (energy equation) to couple into.",
+                           Base::wellSolver()->getName(),
+                           WellManager::viewKeyStruct::isThermalString(),
+                           Base::reservoirSolver()->getName(),
+                           CompositionalMultiphaseBase::viewKeyStruct::isThermalString() ),
                  InputError, this->getDataContext(), Base::reservoirSolver()->getDataContext(), Base::wellSolver()->getDataContext() );
+
+  // Coupling sparsity on the reservoir side must match the reservoir DOF layout,
+  // which is independent of the well isThermal flag.
+  Base::wellSolver()->setNumDofPerResElement( flowSolver->numberOfDofsPerCell() );
+
   DomainPartition & domain = this->template getGroupByPath< DomainPartition >( "/Problem/domain" );
 
   Group & meshBodies = domain.getMeshBodies();
@@ -375,13 +384,14 @@ assembleCouplingTerms( real64 const time_n,
       areWellsShut = 0;
 
       integer numCrossflowPerforations=0;
-      if( isThermal ( )  )
+      if( isThermal() )
       {
         coupledReservoirAndWellKernels::
           ThermalCompositionalMultiPhaseFluxKernelFactory::
           createAndLaunch< parallelDevicePolicy<> >( numComps,
                                                      wellControls.thermalEffectsEnabled( ),
                                                      wellControls.isProducer(),
+                                                     Base::wellSolver()->isThermal(),
                                                      dt,
                                                      rankOffset,
                                                      wellDofKey,

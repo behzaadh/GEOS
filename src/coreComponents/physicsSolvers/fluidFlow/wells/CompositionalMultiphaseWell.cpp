@@ -173,8 +173,8 @@ CompositionalMultiphaseWell::CompositionalMultiphaseWell( const string & name,
   this->registerWrapper( viewKeyStruct::maxRelativeTempChangeString(), &m_maxRelativeTempChange ).
     setSizedFromParent( 0 ).
     setInputFlag( InputFlags::OPTIONAL ).
-    setApplyDefaultValue( 1.0 ).
-    setDescription( "Maximum (relative) change in temperature between two Newton iterations  " );
+    setApplyDefaultValue( 0.5 ).
+    setDescription( "Maximum (relative) change in temperature between two Newton iterations" );
 
   this->registerWrapper( viewKeyStruct::allowLocalCompDensChoppingString(), &m_allowCompDensChopping ).
     setSizedFromParent( 0 ).
@@ -333,7 +333,13 @@ void CompositionalMultiphaseWell::registerWellDataOnMesh( WellElementSubRegion &
     makeDirsForPath( m_ratesOutputDir );
     GEOS_LOG( GEOS_FMT( "{}: Rates CSV generated at {}", getName(), fileName ) );
     std::ofstream outputFile( fileName );
-    outputFile << "Time [s],dt[s],BHP [Pa],Total rate [" << massUnit << "/s],Total " << conditionKey << " volumetric rate [" << unitKey << "m3/s]";
+    // format: time,dt,bhp,[bht,]total_rate,total_vol_rate,phase0_vol_rate,...
+    outputFile << "Time [s],dt[s],BHP [Pa]";
+    if( isThermal() )
+    {
+      outputFile << ",BHT [K]";
+    }
+    outputFile << ",Total rate [" << massUnit << "/s],Total " << conditionKey << " volumetric rate [" << unitKey << "m3/s]";
     for( integer ip = 0; ip < numPhase; ++ip )
     {
       outputFile << ",Phase" << ip << " " << conditionKey << " volumetric rate [" << unitKey << "m3/s]";
@@ -345,7 +351,6 @@ void CompositionalMultiphaseWell::registerWellDataOnMesh( WellElementSubRegion &
     outputFile << std::endl;
     outputFile.close();
   }
-
 
 }
 
@@ -1801,6 +1806,15 @@ CompositionalMultiphaseWell::scalingForWellSystemSolution( WellElementSubRegion 
                                      getName(), minTempScalingFactor ) );
   }
 
+  // Temperature damping is applied locally in applyWellSystemSolution. Including it in the global
+  // scaling factor is incorrect because minScalingFactor (default 0.01) can clamp away a much
+  // smaller temperature scale and allow catastrophic temperature Newton updates.
+  if( m_isThermal )
+  {
+    real64 const nonTempScaling = std::min( minPresScalingFactor, minCompDensScalingFactor );
+    return LvArray::math::max( nonTempScaling, m_minScalingFactor );
+  }
+
   return LvArray::math::max( scalingFactor, m_minScalingFactor );
 
 }
@@ -1846,26 +1860,46 @@ CompositionalMultiphaseWell::checkWellSystemSolution( WellElementSubRegion & sub
   auto const subRegionData = [&](){
     if( m_isThermal )
     {
+      // Thermal wells damp temperature locally. Temporarily fold the global Newton scale into the
+      // local factors so the solution check matches applyWellSystemSolution, then restore.
+      compositionalMultiphaseUtilities::ScalingType const thermalScalingType =
+        compositionalMultiphaseUtilities::ScalingType::Local;
+      array1d< real64 > temperatureScalingFactorSaved( subRegion.size() );
+      arrayView1d< real64 > const temperatureScalingFactorSavedView = temperatureScalingFactorSaved.toView();
+      forAll< parallelDevicePolicy<> >( subRegion.size(), [=] GEOS_HOST_DEVICE ( localIndex const ei )
+      {
+        temperatureScalingFactorSavedView[ei] = temperatureScalingFactor[ei];
+        pressureScalingFactor[ei] = scalingFactor;
+        compDensScalingFactor[ei] = scalingFactor;
+        temperatureScalingFactor[ei] *= scalingFactor;
+      } );
+
       using Kernel = thermalCompositionalMultiphaseBaseKernels::SolutionCheckKernelFactory;
-      return Kernel::createAndLaunch< parallelDevicePolicy<> >( m_allowCompDensChopping,
-                                                                allowNegativePressure,
-                                                                scalingType,
-                                                                scalingFactor,
-                                                                pressure,
-                                                                temperature,
-                                                                compDens,
-                                                                pressureScalingFactor,
-                                                                temperatureScalingFactor,
-                                                                compDensScalingFactor,
-                                                                dofManager.rankOffset(),
-                                                                m_numComponents,
-                                                                wellDofKey,
-                                                                subRegion,
-                                                                localSolution,
-                                                                negPresCollector,
-                                                                negDensCollector,
-                                                                negTotalDensCollector,
-                                                                temperatureOffset );
+      auto const result = Kernel::createAndLaunch< parallelDevicePolicy<> >( m_allowCompDensChopping,
+                                                                             allowNegativePressure,
+                                                                             thermalScalingType,
+                                                                             scalingFactor,
+                                                                             pressure,
+                                                                             temperature,
+                                                                             compDens,
+                                                                             pressureScalingFactor,
+                                                                             temperatureScalingFactor,
+                                                                             compDensScalingFactor,
+                                                                             dofManager.rankOffset(),
+                                                                             m_numComponents,
+                                                                             wellDofKey,
+                                                                             subRegion,
+                                                                             localSolution,
+                                                                             negPresCollector,
+                                                                             negDensCollector,
+                                                                             negTotalDensCollector,
+                                                                             temperatureOffset );
+
+      forAll< parallelDevicePolicy<> >( subRegion.size(), [=] GEOS_HOST_DEVICE ( localIndex const ei )
+      {
+        temperatureScalingFactor[ei] = temperatureScalingFactorSavedView[ei];
+      } );
+      return result;
     }
     else
     {
@@ -2078,12 +2112,29 @@ CompositionalMultiphaseWell::applyWellSystemSolution( DofManager const & dofMana
   if( isThermal() )
   {
     DofManager::CompMask temperatureMask( m_numDofPerWellElement, numFluidComponents()+2, numFluidComponents()+3 );
+
+    // Combine local temperature damping with the global Newton / line-search scale.
+    // Save/restore so line search can re-apply with a different global scale.
+    arrayView1d< real64 > const temperatureScalingFactor =
+      subRegion.getField< fields::well::temperatureScalingFactor >();
+    array1d< real64 > temperatureScalingFactorSaved( subRegion.size() );
+    arrayView1d< real64 > const savedView = temperatureScalingFactorSaved.toView();
+    forAll< parallelDevicePolicy<> >( subRegion.size(), [=] GEOS_HOST_DEVICE ( localIndex const ei )
+    {
+      savedView[ei] = temperatureScalingFactor[ei];
+      temperatureScalingFactor[ei] *= scalingFactor;
+    } );
+
     dofManager.addVectorToField( localSolution,
                                  wellElementDofName(),
                                  fields::well::temperature::key(),
-                                 scalingFactor,
+                                 fields::well::temperatureScalingFactor::key(),
                                  temperatureMask );
 
+    forAll< parallelDevicePolicy<> >( subRegion.size(), [=] GEOS_HOST_DEVICE ( localIndex const ei )
+    {
+      temperatureScalingFactor[ei] = savedView[ei];
+    } );
   }
 
   // if component density chopping is allowed, some component densities may be negative after the update
@@ -2492,13 +2543,20 @@ void CompositionalMultiphaseWell::printRates( real64 const & time_n,
     outputFile << time_n << "," << dt;
   }
 
+  integer const thermalFlag = isThermal();
+
   if( getWellStatus() == WellControls::Status::CLOSED )
   {
     GEOS_LOG( GEOS_FMT( "{}: well is shut", wellControlsName ) );
     if( outputFile.is_open())
     {
       // print all zeros in the rates file
-      outputFile << ",0.0,0.0,0.0";
+      outputFile << ",0.0";
+      if( thermalFlag )
+      {
+        outputFile << ",0.0";
+      }
+      outputFile << ",0.0,0.0";
       for( integer ip = 0; ip < numPhase; ++ip )
       {
         outputFile << ",0.0";
@@ -2520,6 +2578,8 @@ void CompositionalMultiphaseWell::printRates( real64 const & time_n,
 
   arrayView1d< real64 const > const & connRate =
     subRegion.getField< well::connectionRate >();
+  arrayView1d< real64 const > const wellElemTemperature =
+    subRegion.getField< well::temperature >();
 
   integer const useSurfaceCond =  useSurfaceConditions();
 
@@ -2536,20 +2596,28 @@ void CompositionalMultiphaseWell::printRates( real64 const & time_n,
                               &useSurfaceCond,
                               &currentBHP,
                               connRate,
+                              wellElemTemperature,
                               &currentTotalVolRate,
                               currentPhaseVolRate,
                               &compRate,
                               &iwelemRef,
                               &wellControlsName,
                               &massUnit,
+                              &thermalFlag,
                               &outputFile] ( localIndex const )
   {
     string const conditionKey = useSurfaceCond ? "surface" : "reservoir";
     string const unitKey = useSurfaceCond ? "s" : "r";
 
     real64 const currentTotalRate = connRate[iwelemRef];
+    real64 const currentBHT = wellElemTemperature[iwelemRef];
     GEOS_LOG( GEOS_FMT( "{}: BHP (at the specified reference elevation): {} Pa",
                         wellControlsName, currentBHP ) );
+    if( thermalFlag )
+    {
+      GEOS_LOG( GEOS_FMT( "{}: BHT (at the specified reference elevation): {} K",
+                          wellControlsName, currentBHT ) );
+    }
     GEOS_LOG( GEOS_FMT( "{}: Total rate: {} {}/s; total {} volumetric rate: {} {}m3/s",
                         wellControlsName, currentTotalRate, massUnit, conditionKey, currentTotalVolRate, unitKey ) );
     for( integer ip = 0; ip < numPhase; ++ip )
@@ -2558,6 +2626,10 @@ void CompositionalMultiphaseWell::printRates( real64 const & time_n,
     if( outputFile.is_open())
     {
       outputFile << "," << currentBHP;
+      if( thermalFlag )
+      {
+        outputFile << "," << currentBHT;
+      }
       outputFile << "," << currentTotalRate << "," << currentTotalVolRate;
       for( integer ip = 0; ip < numPhase; ++ip )
       {

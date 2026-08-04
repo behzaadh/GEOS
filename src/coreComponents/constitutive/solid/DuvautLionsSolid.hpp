@@ -50,7 +50,7 @@ class DuvautLionsSolidUpdates : public UPDATE_BASE
 {
 public:
   template< typename ... PARAMS >
-  DuvautLionsSolidUpdates( real64 const & relaxationTime,
+  DuvautLionsSolidUpdates( arrayView1d< real64 const > const relaxationTime,
                            PARAMS && ... baseParams ):
     UPDATE_BASE( std::forward< PARAMS >( baseParams )... ),
     m_relaxationTime( relaxationTime )
@@ -77,7 +77,8 @@ public:
   {
     real64 trialStress[6];   // Trial stress (elastic predictor)
     real64 elasticStiffness[6][6];  //Elastic stiffness
-    real64 timeRatio = 1.0 / (1.0 + timeIncrement / m_relaxationTime);
+    real64 const tau = m_relaxationTime[k];
+    real64 timeRatio = 1.0 / (1.0 + timeIncrement / tau);
 
     for( localIndex i=0; i<6; ++i )
     {
@@ -124,7 +125,7 @@ public:
     this->smallStrainUpdate( k, q, timeIncrement, strainIncrement, stress, stiffness.m_c );
   }
 
-  real64 const m_relaxationTime;
+  arrayView1d< real64 const > const m_relaxationTime;
 
 };
 
@@ -158,22 +159,28 @@ public:
   static string catalogName() { return string( "Visco" ) + BASE::catalogName(); }
   virtual string getCatalogName() const override { return catalogName(); }
 
-  real64 relaxationTime() const { return m_relaxationTime; }
+  arrayView1d< real64 const > relaxationTime() const { return m_relaxationTime; }
 
   KernelWrapper createKernelUpdates() const
   {
-    return BASE::template createDerivedKernelUpdates< KernelWrapper >( m_relaxationTime );
+    return BASE::template createDerivedKernelUpdates< KernelWrapper >( m_relaxationTime.toViewConst() );
   }
+
+  virtual void postInputInitialization() override;
 
   struct viewKeyStruct : public BASE::viewKeyStruct
   {
-    /// string/key for relaxation time
-    static constexpr char const * relaxationTimeString() { return "relaxationTime"; }
+    /// string/key for default (uniform) relaxation time when not set from mesh import
+    static constexpr char const * defaultRelaxationTimeString() { return "defaultRelaxationTime"; }
   };
 
 
 protected:
-  real64 m_relaxationTime;
+  /// Default relaxation time (fills per-element field before optional VTK import)
+  real64 m_defaultRelaxationTime;
+
+  /// Per-parent-index relaxation time (may be overwritten by mesh import)
+  array1d< real64 > m_relaxationTime;
 };
 
 }

@@ -281,6 +281,8 @@ The files provide the following information:
 
 - **BHP [Pa]:** Bottom hole pressure at the reference depth.
 
+- **BHT [K]:** Bottom hole temperature at the reference elevation (reported only when ``isThermal="1"``).
+
 - **Total rate [kg/s]:** Total mass flow produced or injected by the well at the current time.
 
 For ``SinglePhaseWell``:
@@ -296,7 +298,7 @@ For ``CompositionalMultiphaseWell``:
 
 The output can be saved in the log file and/or a CSV file if these options are specified (as mentioned `here <#how-to-generate-these-outputs>`__). More information is available `here <https://geosx-geosx.readthedocs-hosted.com/en/latest/docs/sphinx/datastructure/CompositionalMultiphaseWell.html>`__ and `here <https://geosx-geosx.readthedocs-hosted.com/en/latest/docs/sphinx/datastructure/SinglePhaseWell.html>`__.
 
-If the CSV file contains 0.0 values for BHP, total_rate, total_vol_rate or phaseN_vol_rate, the well is shut; the log file will indicate this with "wellName: well is shut".
+If the CSV file contains 0.0 values for BHP, BHT (when thermal), total_rate, total_vol_rate or phaseN_vol_rate, the well is shut; the log file will indicate this with "wellName: well is shut".
 
 Certain error messages are added to the log when invalid well parameter combinations are detected (for example, defining a phase rate for a single-phase well is forbidden).
 

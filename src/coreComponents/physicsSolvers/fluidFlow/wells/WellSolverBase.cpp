@@ -51,7 +51,11 @@ WellSolverBase::WellSolverBase( string const & name,
   registerWrapper( viewKeyStruct::isThermalString(), &m_isThermal ).
     setApplyDefaultValue( 0 ).
     setInputFlag( InputFlags::OPTIONAL ).
-    setDescription( "Flag indicating whether the problem is thermal or not." );
+    setDescription( "Flag indicating whether the well problem is thermal. "
+                    "Independent of the reservoir flow solver isThermal flag. "
+                    "If 1, the well solves an energy balance (injectors and producers). "
+                    "If 0, well energy balance is skipped. "
+                    "A thermal well requires a thermal reservoir." );
 
   this->getWrapper< string >( viewKeyStruct::discretizationString() ).
     setInputFlag( InputFlags::FALSE );

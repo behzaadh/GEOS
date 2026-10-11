@@ -280,8 +280,9 @@ void CompositionalEnthalpyUpdate::calculateEquationOfStateEnthalpy(
                                                        componentProperties.m_componentBinaryCoeff.toSliceConst(),
                                                        derivs.toSliceConst() );
 
-  typename EOS::SelectedRoot const root = phaseType == PhaseType::LIQUID ?
-                                          EOS::SelectedRoot::MINIMUM : EOS::SelectedRoot::MAXIMUM;
+  // Oil and aqueous are both liquid-like and must use the dense (smallest-Z) root
+  typename EOS::SelectedRoot const root = phaseType == PhaseType::VAPOUR  ?
+                                          EOS::SelectedRoot::MAXIMUM  : EOS::SelectedRoot::MINIMUM;
 
   EOS::initialiseStack( numComps, pressure, temperature, componentProperties, stack );
   EOS::computeMixtureCoefficients( numComps, phaseComposition, stack );

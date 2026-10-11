@@ -21,6 +21,7 @@
 #define GEOS_CONSTITUTIVE_FLUID_MULTIFLUID_COMPOSITIONAL_PARAMETERS_EQUATIONOFSTATE_HPP_
 
 #include "ModelParameters.hpp"
+#include "PhaseType.hpp"
 #include "constitutive/fluid/multifluid/MultiFluidBase.hpp"
 #include "dataRepository/InputFlags.hpp"
 #include "common/format/EnumStrings.hpp"
@@ -71,6 +72,9 @@ public:
 
   string_array m_equationsOfStateNames;
 
+  /// Phase type for each input-ordered phase (oil/gas/water), set during post-input init
+  array1d< PhaseType > m_phaseTypes;
+
 protected:
   void registerParametersImpl( MultiFluidBase * fluid ) override
   {
@@ -95,6 +99,13 @@ protected:
     for( string const & eos : m_equationsOfStateNames )
     {
       EnumStrings< EquationOfStateType >::fromString( eos );
+    }
+
+    string_array const & phaseNames = fluid->phaseNames();
+    m_phaseTypes.resize( numPhase );
+    for( size_t ip = 0; ip < numPhase; ++ip )
+    {
+      m_phaseTypes[ip] = getPhaseTypeFromName( phaseNames[ip] );
     }
   }
 };

@@ -14,7 +14,7 @@
  */
 
 /**
- * @file ThermalCompositionalMultiphaseFVM.hpp
+ * @file ThermalCompositionalMultiphaseReservoirFVM.hpp
  */
 
 #ifndef GEOS_LINEARALGEBRA_INTERFACES_HYPREMGRTHERMALCOMPOSITIONALMULTIPHASERESERVOIRFVM_HPP_
@@ -44,9 +44,17 @@ namespace mgr
  *     numResLabels = well pressure
  * numResLabels + 1 = well density
  *              ... = ... (well densities)
- * numResLabels + numWellLabels - 3 = last well density
- * numResLabels + numWellLabels - 2 = well rate
- * numResLabels + numWellLabels - 1 = well temperature
+ *   isothermal well (WellManager isThermal="0"):
+ *     numResLabels + numWellLabels - 2 = last well density
+ *     numResLabels + numWellLabels - 1 = well rate
+ *   thermal well (WellManager isThermal="1"):
+ *     numResLabels + numWellLabels - 3 = last well density
+ *     numResLabels + numWellLabels - 2 = well rate
+ *     numResLabels + numWellLabels - 1 = well temperature
+ *
+ * Level 0 eliminates the entire well block, so isothermal wells (no well
+ * temperature DOF) and thermal wells are both supported. Reservoir temperature
+ * remains a coarse unknown (CPTR).
  *
  * 3-level MGR reduction strategy
  *   - 1st level: eliminate the well block
@@ -68,7 +76,7 @@ public:
   {
     HYPRE_Int const numResLabels = LvArray::integerConversion< HYPRE_Int >( numComponentsPerField[0] );
 
-    // Level 0: eliminate the well block
+    // Level 0: eliminate the well block (isothermal or thermal well DOF layout)
     m_labels[0].resize( numResLabels );
     std::iota( m_labels[0].begin(), m_labels[0].end(), 0 );
 
@@ -82,7 +90,9 @@ public:
 
     setupLabels();
 
-    // level 0
+    // Level 0: eliminate well block (same recipe as CompositionalMultiphaseReservoirFVM).
+    // gsElimWInverse is required: Jacobi F-relax leaves zero-diagonal well rows and
+    // hypre then fails ("Zero diagonal found"). areWellsShut switches to Jacobi below.
     m_levelFRelaxType[0]          = MGRFRelaxationType::gsElimWInverse;
     m_levelFRelaxIters[0]         = 1;
     m_levelInterpType[0]          = MGRInterpolationType::blockJacobi;
@@ -95,26 +105,45 @@ public:
     m_levelInterpType[1]          = MGRInterpolationType::jacobi; // Diagonal scaling (Jacobi)
     m_levelRestrictType[1]        = MGRRestrictionType::injection;
     m_levelCoarseGridMethod[1]    = MGRCoarseGridMethod::galerkin; // Standard Galerkin
-    m_levelGlobalSmootherType[1]  = MGRGlobalSmootherType::blockGaussSeidel;
-    m_levelGlobalSmootherIters[1] = 1;
+    // blockGaussSeidel + col-lumped restriction both segfault in hypre 3.2.0 on
+    // this thermal-reservoir + wells system (isolated by A/B runs on HE_3Comp).
+    m_levelGlobalSmootherType[1]  = MGRGlobalSmootherType::none;
 
     m_levelFRelaxType[2]          = MGRFRelaxationType::none;
     m_levelInterpType[2]          = MGRInterpolationType::injection;
-    m_levelRestrictType[2]        = MGRRestrictionType::partialColLumped; // True-IMPES for thermal
+    // Prefer injection over partialColLumped/blockColLumped: both col-lumped
+    // options segfault in hypre_MGRSetup after the well-elimination level.
+    m_levelRestrictType[2]        = MGRRestrictionType::injection;
     m_levelCoarseGridMethod[2]    = MGRCoarseGridMethod::galerkin;
     m_levelGlobalSmootherType[2]  = MGRGlobalSmootherType::ilu0;
     m_levelGlobalSmootherIters[2] = 1;
   }
 
   /**
+   * @brief Apply MGR parameters that affect the reduction hierarchy.
+   * @param mgrParams MGR configuration parameters
+   */
+  void configure( LinearSolverParameters::MGR const & mgrParams )
+  {
+    // if the wells are shut, using Gaussian elimination as F-relaxation for the well block is an overkill
+    // (and can be singular); in that case, we just use Jacobi
+    if( mgrParams.areWellsShut )
+    {
+      m_levelFRelaxType[0] = MGRFRelaxationType::jacobi;
+    }
+  }
+
+  /**
    * @brief Setup the MGR strategy.
+   * @param mgrParams parameters for the configuration of the MGR recipe
    * @param precond preconditioner wrapper
    * @param mgrData auxiliary MGR data
    */
-  void setup( LinearSolverParameters::MGR const &,
+  void setup( LinearSolverParameters::MGR const & mgrParams,
               HyprePrecWrapper & precond,
               HypreMGRData & mgrData )
   {
+    configure( mgrParams );
     setReduction( precond, mgrData );
 
     // Configure the BoomerAMG solver used as mgr coarse solver for the pressure/temperature reduced system

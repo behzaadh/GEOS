@@ -37,6 +37,17 @@ template< int numComps >
 struct TestData;
 
 template<>
+struct TestData< 3 >
+{
+  static constexpr integer numTestComps = 3;
+  static constexpr integer testComponents[numTestComps] = {0, 1, 2};
+  static std::unique_ptr< TestFluid< 3 > > createFluid()
+  {
+    return TestFluid< 3 >::create( {Fluid::H2O, Fluid::CO2, Fluid::C10H22} );
+  }
+};
+
+template<>
 struct TestData< 9 >
 {
   static constexpr integer numTestComps = 3;
@@ -78,6 +89,7 @@ public:
   ~KValueFlashTestFixture() override;
 
   void testFlash( typename KValueFlashTestFixture::ParamType const & data );
+  void testFlashMaterialBalance( typename KValueFlashTestFixture::ParamType const & data );
   void testNumericalDerivative( typename KValueFlashTestFixture::ParamType const & data );
 
   class MockFluid;
@@ -113,7 +125,14 @@ public:
   void setProperties( ComponentProperties const & componentProperties )
   {
     string_array & phaseNames = getReference< string_array >( MultiFluidBase::viewKeyStruct::phaseNamesString() );
-    TestFluid< numPhases >::createArray( phaseNames, std::array< string, 2 >{"oil", "gas"} );
+    if constexpr ( numPhases == 3 )
+    {
+      TestFluid< numPhases >::createArray( phaseNames, std::array< string, 3 >{"oil", "gas", "water"} );
+    }
+    else
+    {
+      TestFluid< numPhases >::createArray( phaseNames, std::array< string, 2 >{"oil", "gas"} );
+    }
     string_array & componentNames = getReference< string_array >( MultiFluidBase::viewKeyStruct::componentNamesString() );
     TestFluid< numPhases >::createArray( componentNames, componentProperties.getComponentName());
   }
@@ -161,8 +180,6 @@ KValueFlashTestFixture< numPhases, numComps >::~KValueFlashTestFixture()
 // Crookston correlations pressure (bar), temperature (K)
 real64 getKValue( integer const phaseIndex, integer const compIndex, real64 const pressure, real64 const temperature )
 {
-  GEOS_UNUSED_VAR( phaseIndex );
-
   static std::array< real64, 5 > constexpr crookstonCoefficients[9] = {
     {3.0620e+00, 8.9414e+02, 1.1912e-02, 5.3659e+02, 1.1951e+02},
     {-1.8141e+00, 6.2655e+02, 6.7489e-03, 5.0732e+00, 2.5249e+02},
@@ -176,7 +193,21 @@ real64 getKValue( integer const phaseIndex, integer const compIndex, real64 cons
   };
   auto const [A, B, C, D, E] = std::apply( []( auto &&... args ) { return std::make_tuple( args ... ); }, crookstonCoefficients[compIndex] );
   real64 const kValue = (A + B/pressure + C*pressure)*LvArray::math::exp( -D/(temperature-E));
-  return LvArray::math::max( kValue, 1.0e-8 );
+  real64 const kVapour = LvArray::math::max( kValue, 1.0e-8 );
+  if( phaseIndex == 0 )
+  {
+    return kVapour;
+  }
+  // Aqueous vs liquid: water prefers the aqueous phase, CO2 dissolves, hydrocarbons stay out
+  if( compIndex == 0 )
+  {
+    return 80.0;
+  }
+  if( compIndex == 1 )
+  {
+    return 0.8;
+  }
+  return 1.0e-3;
 }
 
 template< integer numPhases, integer numComps >
@@ -235,7 +266,8 @@ void KValueFlashTestFixture< numPhases, numComps >::generateTables( string_array
         for( integer j = 0; j <= NT; ++j )
         {
           real64 const temperature = minTemp + j*dt + 273.15;
-          real64 const kValue = getKValue( ip, ic, pressure, temperature );
+          integer const crookstonIndex = ( numComps == 3 && ic == 2 ) ? 8 : ic;
+          real64 const kValue = getKValue( ip, crookstonIndex, pressure, temperature );
           content << kValue << "\n";
         }
         pressure *= dp;
@@ -331,6 +363,78 @@ void KValueFlashTestFixture< numPhases, numComps >::testFlash( typename KValueFl
     {
       integer const ic = TestData< numComps >::testComponents[i];
       checkRelativeError( phaseComponentFraction[ip][ic], expactedPhaseCompositions[ip*nc+i], relTol, absTol );
+    }
+  }
+}
+
+template< integer numPhases, integer numComps >
+void KValueFlashTestFixture< numPhases, numComps >::testFlashMaterialBalance( typename KValueFlashTestFixture::ParamType const & data )
+{
+  auto const & componentProperties = this->m_fluid->getComponentProperties().createKernelWrapper();
+  auto flashKernelWrapper = this->m_flash->createKernelWrapper();
+
+  real64 const pressure = std::get< 0 >( data );
+  real64 const temperature = std::get< 1 >( data );
+  stackArray1d< real64, numComps > composition;
+  TestFluid< numComps >::createArray( composition, std::get< 2 >( data ));
+
+  stackArray2d< real64, (numPhases-1)*numComps > kValues( numPhases-1, numComps );
+  LvArray::forValuesInSlice( kValues.toSlice(), []( real64 & v ){ v = 0.0; } );
+
+  StackArray< real64, 3, numPhases, multifluid::LAYOUT_PHASE > phaseFractionData( 1, 1, numPhases );
+  StackArray< real64, 4, numPhases *numDofs, multifluid::LAYOUT_PHASE_DC > dPhaseFractionData( 1, 1, numPhases, numDofs );
+  StackArray< real64, 4, numPhases *numComps, multifluid::LAYOUT_PHASE_COMP > phaseComponentFractionData( 1, 1, numPhases, numComps );
+  StackArray< real64, 5, numPhases *numComps *numDofs, multifluid::LAYOUT_PHASE_COMP_DC > dPhaseComponentFractionData( 1, 1, numPhases, numComps, numDofs );
+
+  auto phaseFraction = phaseFractionData[0][0];
+  auto dPhaseFraction = dPhaseFractionData[0][0];
+  auto phaseComponentFraction = phaseComponentFractionData[0][0];
+  auto dPhaseComponentFraction = dPhaseComponentFractionData[0][0];
+
+  flashKernelWrapper.compute( componentProperties,
+                              pressure,
+                              temperature,
+                              composition.toSliceConst(),
+                              kValues.toSlice(),
+                              PhasePropSlice( phaseFraction, dPhaseFraction ),
+                              PhaseCompSlice( phaseComponentFraction, dPhaseComponentFraction ) );
+
+  real64 phaseSum = 0.0;
+  for( integer ip = 0; ip < numPhases; ++ip )
+  {
+    phaseSum += phaseFraction[ip];
+    EXPECT_GE( phaseFraction[ip], -absTol );
+    EXPECT_LE( phaseFraction[ip], 1.0 + absTol );
+    if( phaseFraction[ip] > absTol )
+    {
+      real64 compositionSum = 0.0;
+      for( integer ic = 0; ic < numComps; ++ic )
+      {
+        compositionSum += phaseComponentFraction[ip][ic];
+        EXPECT_GE( phaseComponentFraction[ip][ic], -absTol );
+      }
+      checkRelativeError( compositionSum, 1.0, relTol, absTol );
+    }
+  }
+  checkRelativeError( phaseSum, 1.0, relTol, absTol );
+
+  for( integer ic = 0; ic < numComps; ++ic )
+  {
+    real64 reconstructed = 0.0;
+    for( integer ip = 0; ip < numPhases; ++ip )
+    {
+      reconstructed += phaseFraction[ip] * phaseComponentFraction[ip][ic];
+    }
+    checkRelativeError( reconstructed, composition[ic], relTol, absTol );
+  }
+
+  if constexpr ( numPhases == 3 )
+  {
+    integer constexpr aqueousIndex = 2;
+    integer constexpr co2Index = 1;
+    if( phaseFraction[aqueousIndex] > 1.0e-4 && composition[co2Index] > absTol )
+    {
+      EXPECT_GT( phaseComponentFraction[aqueousIndex][co2Index], absTol );
     }
   }
 }
@@ -497,6 +601,50 @@ INSTANTIATE_TEST_SUITE_P(
     {1.0e+05, 323.15, {0.000000, 0.000000, 1.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000}, {0.000000, 1.000000}, {0.000000, 1.000000, 0.000000, 0.000000, 1.000000, 0.000000}},
     {5.0e+07, 323.15, {0.000000, 0.000000, 1.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000}, {0.000000, 1.000000}, {0.000000, 1.000000, 0.000000, 0.000000, 1.000000, 0.000000}},
     {5.0e+07, 373.15, {0.000000, 0.000000, 1.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000}, {0.000000, 1.000000}, {0.000000, 1.000000, 0.000000, 0.000000, 1.000000, 0.000000}}
+  })
+);
+
+using KValueFlashTest_3_9 = KValueFlashTestFixture< 3, 9 >;
+using FlashData_3_9 = FlashData< 3, 9 >;
+TEST_P( KValueFlashTest_3_9, testFlashMaterialBalance )
+{
+  testFlashMaterialBalance( GetParam() );
+}
+
+TEST_P( KValueFlashTest_3_9, testFlashNumericalDerivative )
+{
+  testNumericalDerivative( GetParam() );
+}
+
+INSTANTIATE_TEST_SUITE_P(
+  KValueFlash, KValueFlashTest_3_9,
+  ::testing::ValuesIn< FlashData_3_9 >({
+    {1.0e+06, 323.15, {0.200000, 0.150000, 0.050000, 0.050000, 0.050000, 0.050000, 0.050000, 0.050000, 0.350000}, {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}},
+    {1.0e+07, 350.15, {0.300000, 0.200000, 0.050000, 0.050000, 0.050000, 0.050000, 0.050000, 0.050000, 0.200000}, {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}},
+    {5.0e+06, 298.15, {0.400000, 0.100000, 0.010000, 0.010000, 0.010000, 0.010000, 0.010000, 0.010000, 0.440000}, {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}},
+    {1.0e+05, 298.15, {0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 1.000000}, {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}}
+  })
+);
+
+using KValueFlashTest_3_3 = KValueFlashTestFixture< 3, 3 >;
+using FlashData_3_3 = FlashData< 3, 3 >;
+TEST_P( KValueFlashTest_3_3, testFlashMaterialBalance )
+{
+  testFlashMaterialBalance( GetParam() );
+}
+
+TEST_P( KValueFlashTest_3_3, testFlashNumericalDerivative )
+{
+  testNumericalDerivative( GetParam() );
+}
+
+INSTANTIATE_TEST_SUITE_P(
+  KValueFlash, KValueFlashTest_3_3,
+  ::testing::ValuesIn< FlashData_3_3 >({
+    {1.0e+06, 323.15, {0.400000, 0.200000, 0.400000}, {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}},
+    {5.0e+06, 350.15, {0.300000, 0.400000, 0.300000}, {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}},
+    {1.0e+07, 298.15, {0.500000, 0.100000, 0.400000}, {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}},
+    {2.0e+06, 373.15, {0.200000, 0.500000, 0.300000}, {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}}
   })
 );
 

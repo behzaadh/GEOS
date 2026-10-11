@@ -799,20 +799,6 @@ public:
       if( oneSidedEqnRowIndices  >= 0 && oneSidedEqnRowIndices < m_localMatrix.numRows() )
       {
 
-        if( !m_isProducer  && m_globalWellElementIndex[iwelem] == 0 )
-        {
-          // For top segment energy balance eqn replaced with  T(n+1) - T = 0
-          // No other energy balance derivatives
-          // Assumption is global index == 0 is top segment with fixed temp BC
-          for( integer i=0; i< CP_Deriv::nDer; i++ )
-          {
-            stack.localEnergyFluxJacobian[0][i] = 0.0;
-          }
-          stack.localEnergyFluxJacobian_dQ[0][0]=0;
-          stack.localEnergyFlux[0]=0;
-        }
-
-
         // Setup Jacobian global col indicies  ( Mapping from local jac order to well jac order)
         globalIndex oneSidedDofColIndices_dRate =   stack.offsetCurrent + WJ_COFFSET::dQ;
         globalIndex oneSidedDofColIndices_dPresCompTempUp[CP_Deriv::nDer]{};
@@ -841,20 +827,6 @@ public:
       globalIndex row_current = stack.offsetCurrent + WJ_ROFFSET::ENERGYBAL   - m_rankOffset;
       globalIndex row_next = stack.offsetNext + WJ_ROFFSET::ENERGYBAL   - m_rankOffset;
 
-      if( !m_isProducer )
-      {
-        if( row_next >= 0 && row_next <  m_localMatrix.numRows() )
-        {
-          if( m_globalWellElementIndex[stack.iwelemNext] == 0 )
-          {
-            for( integer i=0; i<CP_Deriv::nDer; i++ )
-              stack.localEnergyFluxJacobian[TAG::NEXT][i] = 0.0;
-            stack.localEnergyFluxJacobian_dQ[TAG::NEXT][0] =0;
-            stack.localEnergyFlux[TAG::NEXT] =0;
-          }
-
-        }
-      }
       // Setup Jacobian global row indicies
       // equations for COMPONENT  + ENERGY balances
       globalIndex eqnRowIndices[2]{};

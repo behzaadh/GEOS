@@ -55,3 +55,30 @@ The following table outlines the available compositional fluid models (specified
        * Phase split method: K-Value Flash.
        * Phase density models: Phillips brine density model; Compositional density.
        * Phase viscosity models: Phillips brine viscosity model; Lohrenz-Bray-Clark viscosity.
+
+   * - ``CompositionalTwoPhaseKValueThermalFluidLohrenzBrayClark`` :ref:`XML_CompositionalTwoPhaseKValueThermalFluidLohrenzBrayClark`
+
+       * Number of phases: 2.
+       * Possible applications: Thermal oil–gas recovery with tabulated K(P,T) and compositional enthalpy.
+       * Phase split method: Two-phase K-Value Flash.
+       * Phase density models: Compositional density.
+       * Phase viscosity models: Lohrenz-Bray-Clark viscosity.
+       * Phase enthalpy model: Compositional enthalpy (Poling heat capacity plus cubic departure).
+
+   * - ``CompositionalTwoPhaseKValueThermalFluidPhillipsBrine`` :ref:`XML_CompositionalTwoPhaseKValueThermalFluidPhillipsBrine`
+
+       * Number of phases: 2.
+       * Possible applications: Thermal gas–water systems with tabulated K(P,T), including CO2 dissolution in brine.
+       * Phase split method: Two-phase K-Value Flash.
+       * Phase density models: Phillips brine density for the aqueous phase; Compositional density for the gas phase.
+       * Phase viscosity models: Phillips brine viscosity for the aqueous phase; Lohrenz-Bray-Clark viscosity for the gas phase.
+       * Phase enthalpy model: Compositional enthalpy.
+
+   * - ``CompositionalThreePhaseKValueThermalFluidLohrenzBrayClark`` :ref:`XML_CompositionalThreePhaseKValueThermalFluidLohrenzBrayClark`
+
+       * Number of phases: 3.
+       * Possible applications: Thermal oil/gas/water flow when CO2 (or other components) must dissolve in water according to tabulated aqueous K-values.
+       * Phase split method: Three-phase K-Value Flash (vapour–liquid and aqueous–liquid K-tables).
+       * Phase density models: Compositional density for oil, gas, and aqueous phases.
+       * Phase viscosity models: Lohrenz-Bray-Clark viscosity for all phases.
+       * Phase enthalpy model: Compositional enthalpy.

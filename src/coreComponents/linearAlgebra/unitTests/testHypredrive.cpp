@@ -774,6 +774,28 @@ TEST( HypredriveYaml, UsesWellTemperatureLabelForThermalReservoirWellBlocks )
   EXPECT_NE( target.argument.find( "wellTemperature: 8" ), std::string::npos );
 }
 
+TEST( HypredriveYaml, OmitsWellTemperatureLabelForIsothermalWellsOnThermalReservoir )
+{
+  // Thermal reservoir NC+2 labels with isothermal wells (same count, no well T DOF).
+  stdVector< string > const fieldNames = { "compositionalVariables", "compositionalWellVars" };
+  array1d< int > numComponentsPerField( 2 );
+  numComponentsPerField[0] = 6;
+  numComponentsPerField[1] = 6;
+
+  hypre::hypredrive::InputArgsParseTarget target;
+  ASSERT_TRUE( hypre::hypredrive::buildInputArgsParseTarget( makeMgrParameters( LinearSolverParameters::MGR::StrategyType::thermalCompositionalMultiphaseReservoirFVM ),
+                                                             fieldNames,
+                                                             numComponentsPerField,
+                                                             target ) );
+  EXPECT_NE( target.argument.find( "wellPressure: 6" ), std::string::npos );
+  EXPECT_NE( target.argument.find( "wellDensity_0: 7" ), std::string::npos );
+  EXPECT_NE( target.argument.find( "wellDensity_3: 10" ), std::string::npos );
+  EXPECT_NE( target.argument.find( "wellRate: 11" ), std::string::npos );
+  EXPECT_EQ( target.argument.find( "wellTemperature" ), std::string::npos );
+  EXPECT_NE( target.argument.find( "f_dofs: [wellPressure, wellDensity_0, wellDensity_1, wellDensity_2, wellDensity_3, wellRate]" ),
+             std::string::npos );
+}
+
 TEST( HypredriveYaml, BuildsThermalSinglePhasePoromechanicsReservoirYaml )
 {
   stdVector< string > const fieldNames = { "totalDisplacement", "singlePhaseVariables", "singlePhaseWellVars" };

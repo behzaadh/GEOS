@@ -170,6 +170,10 @@ void MeshManager::importFields( MeshGeneratorBase const & generator,
                                 FieldIdentifiers & fieldsToBeSync )
 {
   std::unordered_set< string > const materialWrapperNames = getMaterialWrapperNames( subRegion );
+  for( auto const & str : materialWrapperNames )
+  { 
+    GEOS_LOG_RANK_0( GEOS_FMT( " material field: {}", str ) );
+  }
   // Writing properties
   for( auto const & pair : fieldsMapping )
   {

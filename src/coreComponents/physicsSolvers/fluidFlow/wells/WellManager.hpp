@@ -174,6 +174,12 @@ public:
   localIndex numDofPerResElement() const;
 
   /**
+   * @brief Set reservoir-side DOF count used for well/reservoir coupling sparsity.
+   * @param n number of DOFs per reservoir element (from the flow solver layout)
+   */
+  void setNumDofPerResElement( integer const n ) { m_numDofPerResElement = n; }
+
+  /**
    * @brief getter for iso/thermal switch
    * @return True if thermal
    */

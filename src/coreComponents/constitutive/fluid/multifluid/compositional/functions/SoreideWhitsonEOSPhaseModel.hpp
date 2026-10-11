@@ -150,7 +150,8 @@ struct SoreideWhitsonEOSPhaseModel
                                          ComponentProperties::KernelWrapper const & componentProperties,
                                          real64 const & salinity,
                                          real64 & compressibilityFactor,
-                                         arraySlice1d< real64, USD2 > const & compressibilityFactorDerivs );
+                                         arraySlice1d< real64, USD2 > const & compressibilityFactorDerivs,
+                                         typename CubicModel::SelectedRoot const selectedRoot = CubicModel::SelectedRoot::AUTO );
 
   /**
    * @brief Calculate the pure coefficients derivatives for the water component

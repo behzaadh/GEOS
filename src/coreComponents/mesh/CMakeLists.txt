@@ -265,21 +265,21 @@ if( ENABLE_VTK )
     # Avoid compiling with nvcc which sometimes segfaults in debug
     set_source_files_properties( generators/VTKMeshGeneratorTools.cpp PROPERTIES LANGUAGE CXX )
 
+    # VTK's bundled DIY coroutine header (sjlj.hpp) emits a #warning when
+    # _FORTIFY_SOURCE is enabled, because setjmp/longjmp stack switching is
+    # incompatible with glibc fortify checks. Non-Debug GEOS builds use -Werror,
+    # so treat that preprocessor warning as non-fatal for this TU only.
+    set( vtkMeshGeneratorTools_compile_options "-Wno-error=cpp" )
+
     # GCC 12 incorrectly diagnoses a use-after-free in VTK's header-only DIY
     # reduction implementation when the all-to-all calls in this source are
     # inlined. Suppress this third-party false positive for this source only.
     if( CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 13 )
-        set_source_files_properties( generators/VTKMeshGeneratorTools.cpp PROPERTIES COMPILE_OPTIONS "-Wno-use-after-free" )
+        list( APPEND vtkMeshGeneratorTools_compile_options "-Wno-use-after-free" )
     endif()
 
-    # VTK's bundled DIY coroutine implementation intentionally emits a
-    # preprocessor warning when glibc fortification is enabled.  Keep the
-    # warning visible, but do not let this third-party diagnostic override
-    # GEOS' warnings-as-errors policy for this source file.
-    if( CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang|IntelLLVM" )
-        set_property( SOURCE generators/VTKMeshGeneratorTools.cpp APPEND
-                      PROPERTY COMPILE_OPTIONS "-Wno-error=cpp" )
-    endif()
+    set_source_files_properties( generators/VTKMeshGeneratorTools.cpp
+                                 PROPERTIES COMPILE_OPTIONS "${vtkMeshGeneratorTools_compile_options}" )
 endif()
 
 if( GEOS_ENABLE_TESTS )

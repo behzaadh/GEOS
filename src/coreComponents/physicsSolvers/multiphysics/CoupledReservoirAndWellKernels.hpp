@@ -95,7 +95,8 @@ public:
                                                CRSMatrixView< real64, globalIndex const > const & localMatrix,
                                                bool const & detectCrossflow,
                                                integer & numCrossFlowPerforations,
-                                               BitFlags< isothermalCompositionalMultiphaseBaseKernels::KernelFlags > kernelFlags )
+                                               BitFlags< isothermalCompositionalMultiphaseBaseKernels::KernelFlags > kernelFlags,
+                                               integer const wellHasTemperature = IS_THERMAL )
     :
     m_dt( dt ),
     m_numPhases ( fluid.numFluidPhases()),
@@ -113,7 +114,8 @@ public:
     m_localMatrix( localMatrix ),
     m_detectCrossflow( detectCrossflow ),
     m_numCrossFlowPerforations( numCrossFlowPerforations ),
-    m_useTotalMassEquation ( kernelFlags.isSet( isothermalCompositionalMultiphaseBaseKernels::KernelFlags::TotalMassEquation ) )
+    m_useTotalMassEquation ( kernelFlags.isSet( isothermalCompositionalMultiphaseBaseKernels::KernelFlags::TotalMassEquation ) ),
+    m_wellHasTemperature( wellHasTemperature )
   { }
 
 
@@ -167,7 +169,9 @@ public:
       if constexpr ( IS_THERMAL )
       {
         dofColIndices[TAG::RES * resNumDOF + NC+1 ] = resOffset + NC+1;
-        dofColIndices[TAG::WELL * resNumDOF + NC+1 ] = wellElemOffset + WJ_COFFSET::dT;
+        // Well temperature DOF exists only when the well is thermal.
+        dofColIndices[TAG::WELL * resNumDOF + NC+1 ] = wellElemOffset +
+                                                       ( m_wellHasTemperature ? WJ_COFFSET::dT : WJ_COFFSET::dP );
       }
       // populate local flux vector and derivatives
       for( integer ic = 0; ic < numComp; ++ic )
@@ -198,8 +202,14 @@ public:
           if constexpr ( IS_THERMAL )
           {
             localIndex localDofIndexTemp  = localDofIndexPres + NC + 1;
-            localPerfJacobian[TAG::RES * numComp + ic][localDofIndexTemp] = m_dt *  m_dCompPerfRate[iperf][ke][ic][CP_Deriv::dT];
-            localPerfJacobian[TAG::WELL * numComp + ic][localDofIndexTemp] = -m_dt *  m_dCompPerfRate[iperf][ke][ic][CP_Deriv::dT];
+            // Injection temperature is prescribed when the well has no temperature unknown.
+            // That column is aliased onto well pressure, so a nonzero dT entry would be added
+            // into the pressure derivative.
+            bool const dropWellTempDeriv = ( ke == TAG::WELL && !m_wellHasTemperature );
+            localPerfJacobian[TAG::RES * numComp + ic][localDofIndexTemp] =
+              dropWellTempDeriv ? 0.0 : m_dt * m_dCompPerfRate[iperf][ke][ic][CP_Deriv::dT];
+            localPerfJacobian[TAG::WELL * numComp + ic][localDofIndexTemp] =
+              dropWellTempDeriv ? 0.0 : -m_dt * m_dCompPerfRate[iperf][ke][ic][CP_Deriv::dT];
           }
         }
       }
@@ -277,6 +287,8 @@ protected:
   bool const m_detectCrossflow;
   integer & m_numCrossFlowPerforations;
   integer const m_useTotalMassEquation;
+  /// True if the well solver has a temperature DOF (well isThermal)
+  integer const m_wellHasTemperature;
 };
 
 /**
@@ -641,6 +653,7 @@ public:
   ThermalCompositionalMultiPhaseFluxKernel( real64 const dt,
                                             bool const thermalEffectsEnabled,
                                             integer const isProducer,
+                                            integer const assembleWellEnergy,
                                             globalIndex const rankOffset,
                                             string const wellDofKey,
                                             WellElementSubRegion const & subRegion,
@@ -663,9 +676,11 @@ public:
             localMatrix,
             detectCrossflow,
             numCrossFlowPerforations,
-            kernelFlags ),
+            kernelFlags,
+            assembleWellEnergy ),
     m_thermalEffectsEnabled( thermalEffectsEnabled ),
     m_isProducer( isProducer ),
+    m_assembleWellEnergy( assembleWellEnergy ),
     m_globalWellElementIndex( subRegion.getGlobalWellElementIndex() ),
     m_energyPerfFlux( perforationData->getField< fields::well::energyPerforationFlux >()),
     m_dEnergyPerfFlux( perforationData->getField< fields::well::dEnergyPerforationFlux >())
@@ -690,16 +705,19 @@ public:
                                     stackArray1d< globalIndex, 2*resNumDOF > & dofColIndices,
                                     localIndex const iwelem )
     {
+      // thermalEffectsEnabled: assemble perforation enthalpy into the *reservoir* energy equation.
+      // assembleWellEnergy: also touch the well ENERGYBAL row (requires WellManager isThermal="1").
+      // Isothermal-well + thermal-reservoir (fixed injectionTemperature) uses thermalEffectsEnabled
+      // with assembleWellEnergy=false so cold enthalpy reaches the reservoir without a well T DOF.
+      // thermalEffectsEnabled is only false during the isothermal constraint estimator.
       if( !m_thermalEffectsEnabled )
         return;
-      // No energy equation if top element and Injector
-      // Top element defined by global index == 0
-      // Assumption is global index == 0 is top segment with fixed temp BC
-      if( !m_isProducer )
-      {
-        if( m_globalWellElementIndex[iwelem] == 0 )
-          return;
-      }
+      // Injector top segment replaces its ENERGYBAL row with a fixed-temperature constraint, so
+      // skip the well energy contribution for that segment. Reservoir energy must still receive
+      // the perforation enthalpy (cold injection), including when the perforated segment is the top one.
+      bool const skipWellEnergy = !m_assembleWellEnergy ||
+                                  ( !m_isProducer && m_globalWellElementIndex[iwelem] == 0 );
+
       // local working variables and arrays
       stackArray1d< localIndex, 2* numComp > eqnRowIndices( 2* numComp );
 
@@ -709,27 +727,40 @@ public:
 
       // equantion offsets - note res and well have different equation lineups
       eqnRowIndices[TAG::RES  ] = LvArray::integerConversion< localIndex >( resOffset - m_rankOffset )      + NC + 1;
-      eqnRowIndices[TAG::WELL ] = LvArray::integerConversion< localIndex >( wellElemOffset - m_rankOffset ) + WJ_ROFFSET::ENERGYBAL;
+      // Well ENERGYBAL exists only when the well is thermal
+      eqnRowIndices[TAG::WELL ] = skipWellEnergy
+                                  ? -1
+                                  : LvArray::integerConversion< localIndex >( wellElemOffset - m_rankOffset ) + WJ_ROFFSET::ENERGYBAL;
 
       // populate local flux vector and derivatives
       localPerf[TAG::RES  ]   = m_dt * m_energyPerfFlux[iperf];
-      localPerf[TAG::WELL ]   = -m_dt * m_energyPerfFlux[iperf];
+      localPerf[TAG::WELL ]   = skipWellEnergy ? 0.0 : -m_dt * m_energyPerfFlux[iperf];
 
       for( integer ke = 0; ke < 2; ++ke )
       {
         localIndex localDofIndexPres = ke * resNumDOF;
         localPerfJacobian[TAG::RES  ][localDofIndexPres] = m_dt *  m_dEnergyPerfFlux[iperf][ke][CP_Deriv::dP];
-        localPerfJacobian[TAG::WELL ][localDofIndexPres] = -m_dt *  m_dEnergyPerfFlux[iperf][ke][CP_Deriv::dP];
+        localPerfJacobian[TAG::WELL ][localDofIndexPres] = skipWellEnergy ? 0.0 : -m_dt *  m_dEnergyPerfFlux[iperf][ke][CP_Deriv::dP];
 
         // populate local flux vector and derivatives
         for( integer ic = 0; ic < numComp; ++ic )
         {
           localIndex const localDofIndexComp = localDofIndexPres + ic + 1;
           localPerfJacobian[TAG::RES ][localDofIndexComp] = m_dt * m_dEnergyPerfFlux[iperf][ke][CP_Deriv::dC+ic];
-          localPerfJacobian[TAG::WELL][localDofIndexComp] = -m_dt * m_dEnergyPerfFlux[iperf][ke][CP_Deriv::dC+ic];
+          localPerfJacobian[TAG::WELL][localDofIndexComp] = skipWellEnergy ? 0.0 : -m_dt * m_dEnergyPerfFlux[iperf][ke][CP_Deriv::dC+ic];
         }
-        localPerfJacobian[TAG::RES ][localDofIndexPres+NC+1] = m_dt * m_dEnergyPerfFlux[iperf][ke][CP_Deriv::dT];
-        localPerfJacobian[TAG::WELL][localDofIndexPres+NC+1] = -m_dt * m_dEnergyPerfFlux[iperf][ke][CP_Deriv::dT];
+        // The well-side temperature derivative only exists when the well actually has a
+        // temperature DOF (i.e. the well itself is thermal). When it doesn't (isothermal
+        // well coupled to a thermal reservoir/fluid, e.g. WellManager isThermal="0"), the
+        // well temperature is a fixed parameter rather than an unknown, and the well-side
+        // column in dofColIndices at this slot is aliased onto the well's pressure column
+        // (see IsothermalCompositionalMultiPhaseFluxKernel::computeFlux). Inserting the raw
+        // dT derivative there would silently corrupt the derivative of the reservoir energy
+        // equation with respect to the well pressure DOF, so it must be dropped instead.
+        bool const skipWellSideTempDeriv = ( ke == TAG::WELL && skipWellEnergy );
+        localPerfJacobian[TAG::RES ][localDofIndexPres+NC+1] =
+          skipWellSideTempDeriv ? 0.0 : m_dt * m_dEnergyPerfFlux[iperf][ke][CP_Deriv::dT];
+        localPerfJacobian[TAG::WELL][localDofIndexPres+NC+1] = skipWellEnergy ? 0.0 : -m_dt * m_dEnergyPerfFlux[iperf][ke][CP_Deriv::dT];
       }
 
 
@@ -776,6 +807,9 @@ protected:
   /// Well type
   integer const m_isProducer;
 
+  /// If true, assemble perforation energy into the well ENERGYBAL equation
+  integer const m_assembleWellEnergy;
+
   /// Global index of local element
   arrayView1d< globalIndex const >  m_globalWellElementIndex;
 
@@ -809,6 +843,7 @@ public:
   createAndLaunch( integer const numComps,
                    integer const thermalEffectsEnabled,
                    integer const isProducer,
+                   integer const assembleWellEnergy,
                    real64 const dt,
                    globalIndex const rankOffset,
                    string const wellDofKey,
@@ -828,7 +863,7 @@ public:
       integer constexpr NUM_COMP = NC();
 
       using kernelType = ThermalCompositionalMultiPhaseFluxKernel< NUM_COMP, 1 >;
-      kernelType kernel( dt, thermalEffectsEnabled, isProducer, rankOffset, wellDofKey, subRegion, resDofNumber, perforationData,
+      kernelType kernel( dt, thermalEffectsEnabled, isProducer, assembleWellEnergy, rankOffset, wellDofKey, subRegion, resDofNumber, perforationData,
                          fluid, localRhs, localMatrix, detectCrossflow, numCrossFlowPerforations, kernelFlags );
       kernelType::template launch< POLICY >( perforationData->size(), kernel );
     } );
@@ -935,16 +970,11 @@ public:
                                     stackArray1d< globalIndex, resNumDOF > & dofColIndices )
     {
       GEOS_UNUSED_VAR( dofColIndices );
+      GEOS_UNUSED_VAR( iwelem );
       if( !m_thermalEffectsEnabled )   // tjb iso
         return;
-      // No energy equation if top element and Injector
-      // Top element defined by global index == 0
-      // Assumption is global index == 0 is top segment with fixed temp BC
-      if( !m_isProducer )
-      {
-        if( m_globalWellElementIndex[iwelem] == 0 )
-          return;
-      }
+      // Keep energy balance for all perforated segments when thermal effects are enabled
+      // (including injector top segment).
       // local working variables and arrays
       localIndex eqnRowIndices = LvArray::integerConversion< localIndex >( wellElemOffset - m_rankOffset ) + WJ_ROFFSET::ENERGYBAL;
 

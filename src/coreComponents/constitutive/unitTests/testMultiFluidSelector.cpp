@@ -44,6 +44,10 @@ protected:
 using MultiFluidSelectorTestDeadOilFluid = MultiFluidSelectorTest< DeadOilFluid >;
 using MultiFluidSelectorTestCO2BrinePhillipsThermalFluid = MultiFluidSelectorTest< CO2BrinePhillipsThermalFluid >;
 using MultiFluidSelectorTestCompositionalTwoPhaseConstantViscosity = MultiFluidSelectorTest< CompositionalTwoPhaseConstantViscosity >;
+using MultiFluidSelectorTestCompositionalTwoPhaseKValueThermalFluidLohrenzBrayClark =
+  MultiFluidSelectorTest< CompositionalTwoPhaseKValueThermalFluidLohrenzBrayClark >;
+using MultiFluidSelectorTestCompositionalThreePhaseKValueThermalFluidLohrenzBrayClark =
+  MultiFluidSelectorTest< CompositionalThreePhaseKValueThermalFluidLohrenzBrayClark >;
 
 TEST_F( MultiFluidSelectorTestDeadOilFluid, testValidComponents )
 {
@@ -156,4 +160,24 @@ TEST_F( MultiFluidSelectorTestCompositionalTwoPhaseConstantViscosity, testTherma
   {
     FAIL(); // Shouldn't be called
   } ), InputError );
+}
+
+TEST_F( MultiFluidSelectorTestCompositionalTwoPhaseKValueThermalFluidLohrenzBrayClark, testThermal )
+{
+  bool isExecuted = false;
+  constitutiveComponentUpdatePassThru< true >( getFluid(), 3, [&]( auto &, auto )
+  {
+    isExecuted = true;
+  } );
+  EXPECT_TRUE( isExecuted );
+}
+
+TEST_F( MultiFluidSelectorTestCompositionalThreePhaseKValueThermalFluidLohrenzBrayClark, testThermal )
+{
+  bool isExecuted = false;
+  constitutiveComponentUpdatePassThru< true >( getFluid(), 4, [&]( auto &, auto )
+  {
+    isExecuted = true;
+  } );
+  EXPECT_TRUE( isExecuted );
 }

@@ -23,6 +23,7 @@
 #include "DruckerPrager.hpp"
 #include "DruckerPragerExtended.hpp"
 #include "ModifiedCamClay.hpp"
+#include "SolidFields.hpp"
 
 namespace geos
 {
@@ -35,9 +36,24 @@ template< typename BASE >
 DuvautLionsSolid< BASE >::DuvautLionsSolid( string const & name, Group * const parent ):
   BASE( name, parent )
 {
-  this->registerWrapper( viewKeyStruct::relaxationTimeString(), &m_relaxationTime ).
+  this->registerWrapper( viewKeyStruct::defaultRelaxationTimeString(), &m_defaultRelaxationTime ).
     setInputFlag( InputFlags::REQUIRED ).
-    setDescription( "Relaxation time" );
+    setDescription( "Default Duvaut-Lions relaxation time (per-element values default to this; may be overwritten by mesh import)" );
+
+  this->template registerField< fields::solid::relaxationTime >( &m_relaxationTime );
+}
+
+template< typename BASE >
+void DuvautLionsSolid< BASE >::postInputInitialization()
+{
+  BASE::postInputInitialization();
+
+  GEOS_THROW_IF( m_defaultRelaxationTime <= 0.0,
+                 "Non-positive default relaxation time detected",
+                 InputError, this->getDataContext() );
+
+  this->template getField< fields::solid::relaxationTime >().
+    setApplyDefaultValue( m_defaultRelaxationTime );
 }
 
 
@@ -46,6 +62,10 @@ typedef DuvautLionsSolid< DruckerPrager > ViscoDruckerPrager;
 typedef DuvautLionsSolid< DruckerPragerExtended > ViscoDruckerPragerExtended;
 //typedef DuvautLionsSolid< DelftEgg > ViscoDelftEgg;
 typedef DuvautLionsSolid< ModifiedCamClay > ViscoModifiedCamClay;
+
+template class DuvautLionsSolid< DruckerPrager >;
+template class DuvautLionsSolid< DruckerPragerExtended >;
+template class DuvautLionsSolid< ModifiedCamClay >;
 
 //REGISTER_CATALOG_ENTRY( ConstitutiveBase, ViscoElasticIsotropic, string const &, Group * const )
 REGISTER_CATALOG_ENTRY( ConstitutiveBase, ViscoDruckerPrager, string const &, Group * const )

@@ -99,6 +99,14 @@ public:
   localIndex numDofPerResElement() const { return m_numDofPerResElement; }
 
   /**
+   * @brief Set the number of reservoir DOFs used for well-reservoir coupling sparsity.
+   * @details This may differ from the well's own isThermal flag when the reservoir is thermal
+   *          but the well is isothermal (or vice versa is unsupported).
+   * @param n number of DOFs per reservoir element
+   */
+  void setNumDofPerResElement( integer const n ) { m_numDofPerResElement = n; }
+
+  /**
    * @brief getter for iso/thermal switch
    * @return True if thermal
    */

@@ -237,14 +237,13 @@ void WellControls::registerWellDataOnMesh( WellElementSubRegion & subRegion )
     registerWrapper< real64 >( viewKeyStruct::currentMassRateString() );
   }
 
-  // If estimator is used including thermal effects set during constraint evaluation
-  // otherwise they are always included
-  if( isThermal() )
+  // Thermal *well* (isThermal=1): always include perforation energy (unless the isothermal
+  // estimator temporarily disables it). Thermal *reservoir* + isothermal well is enabled later
+  // by CompositionalMultiphaseReservoirAndWells once the reservoir isThermal flag is known —
+  // that path assembles reservoir enthalpy only (no well ENERGYBAL / T DOF).
+  if( isThermal() && m_estimateSolution == 0 )
   {
-    if( m_estimateSolution == 0 )
-    {
-      enableThermalEffects( true );
-    }
+    enableThermalEffects( true );
   }
 }
 

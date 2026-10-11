@@ -501,6 +501,22 @@ bool strategyUsesWellTemperatureLabel( LinearSolverParameters::MGR::StrategyType
   return strategy == LinearSolverParameters::MGR::StrategyType::thermalCompositionalMultiphaseReservoirFVM;
 }
 
+/**
+ * @brief Infer whether well DOFs include temperature for thermal reservoir+wells MGR.
+ * @details Thermal reservoir field has NC+2 labels (P, densities, T). Isothermal wells
+ *          have NC+2 labels (P, densities, rate); thermal wells have NC+3 (…, rate, Tw).
+ *          Therefore well temperature exists iff wellLabels == resLabels + 1.
+ */
+bool wellFieldHasTemperature( LinearSolverParameters::MGR::StrategyType const strategy,
+                              arrayView1d< int const > const & numComponentsPerField )
+{
+  if( !strategyUsesWellTemperatureLabel( strategy ) || numComponentsPerField.size() < 2 )
+  {
+    return strategyUsesWellTemperatureLabel( strategy );
+  }
+  return numComponentsPerField[1] == numComponentsPerField[0] + 1;
+}
+
 stdVector< string > buildCompositionalFieldLabelNames( LinearSolverParameters::MGR::StrategyType const strategy,
                                                        int const numComponents )
 {
@@ -531,8 +547,8 @@ stdVector< string > buildCompositionalFieldLabelNames( LinearSolverParameters::M
   return labelNames;
 }
 
-stdVector< string > buildCompositionalWellFieldLabelNames( LinearSolverParameters::MGR::StrategyType const strategy,
-                                                           int const numComponents )
+stdVector< string > buildCompositionalWellFieldLabelNames( int const numComponents,
+                                                           bool const hasWellTemperature )
 {
   stdVector< string > labelNames;
   labelNames.reserve( std::max( numComponents, 0 ) );
@@ -542,10 +558,9 @@ stdVector< string > buildCompositionalWellFieldLabelNames( LinearSolverParameter
     return labelNames;
   }
 
-  bool const hasTemperature = strategyUsesWellTemperatureLabel( strategy );
   labelNames.emplace_back( "wellPressure" );
 
-  int const densityCount = hasTemperature
+  int const densityCount = hasWellTemperature
                            ? std::max( numComponents - 3, 0 )
                            : std::max( numComponents - 2, 0 );
   for( int densityIndex = 0; densityIndex < densityCount; ++densityIndex )
@@ -558,7 +573,7 @@ stdVector< string > buildCompositionalWellFieldLabelNames( LinearSolverParameter
     labelNames.emplace_back( "wellRate" );
   }
 
-  if( hasTemperature && numComponents > 2 )
+  if( hasWellTemperature && numComponents > 2 )
   {
     labelNames.emplace_back( "wellTemperature" );
   }
@@ -623,7 +638,8 @@ stdVector< string > buildSinglePhaseWellFieldLabelNames( int const numComponents
 
 stdVector< string > buildFieldComponentLabelNames( LinearSolverParameters::MGR::StrategyType const strategy,
                                                    std::string const & baseName,
-                                                   int const numComponents )
+                                                   int const numComponents,
+                                                   bool const hasWellTemperature )
 {
   stdVector< string > labelNames;
   labelNames.reserve( std::max( numComponents, 0 ) );
@@ -652,7 +668,7 @@ stdVector< string > buildFieldComponentLabelNames( LinearSolverParameters::MGR::
 
   if( normalizedBaseName == "compositionalwellvars" && strategyUsesCompositionalWellSemanticLabels( strategy ) )
   {
-    return buildCompositionalWellFieldLabelNames( strategy, numComponents );
+    return buildCompositionalWellFieldLabelNames( numComponents, hasWellTemperature );
   }
 
   for( int component = 0; component < numComponents; ++component )
@@ -672,6 +688,8 @@ stdVector< string > buildDofLabelNames( LinearSolverParameters::MGR::StrategyTyp
   stdVector< string > labels;
   labels.reserve( std::accumulate( numComponentsPerField.begin(), numComponentsPerField.end(), 0 ) );
 
+  bool const hasWellTemperature = wellFieldHasTemperature( strategy, numComponentsPerField );
+
   std::set< string > usedNames;
   for( localIndex fieldIndex = 0; fieldIndex < numComponentsPerField.size(); ++fieldIndex )
   {
@@ -685,7 +703,8 @@ stdVector< string > buildDofLabelNames( LinearSolverParameters::MGR::StrategyTyp
 
     for( std::string labelName : buildFieldComponentLabelNames( strategy,
                                                                 baseName,
-                                                                numComponentsPerField[fieldIndex] ) )
+                                                                numComponentsPerField[fieldIndex],
+                                                                hasWellTemperature ) )
     {
       if( labelName.empty() || std::isdigit( static_cast< unsigned char >( labelName.front() ) ) )
       {

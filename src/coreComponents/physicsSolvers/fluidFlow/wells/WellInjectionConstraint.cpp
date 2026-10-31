@@ -47,6 +47,12 @@ InjectionConstraint< ConstraintRateType >::InjectionConstraint( string const & n
     setDefaultValue( -1 ).
     setInputFlag( InputFlags::OPTIONAL ).
     setDescription( "Temperature of the injection stream [K]" );
+
+  InjectionConstraint< ConstraintRateType >::registerWrapper( injectionStreamKey::injectionTemperatureTableNameString(), &m_injectionTemperatureTableName ).
+    setRTTypeName( rtTypes::CustomTypes::groupNameRef ).
+    setInputFlag( InputFlags::OPTIONAL ).
+    setDescription( "Name of the table of injection stream temperature [K] versus time. Replaces "
+                    + string( injectionStreamKey::injectionTemperatureString() ) );
 }
 template< typename ConstraintRateType >
 InjectionConstraint< ConstraintRateType >::~InjectionConstraint()
@@ -57,15 +63,33 @@ void InjectionConstraint< ConstraintRateType >::postInputInitialization()
   // Validate value and table options
   ConstraintRateType::postInputInitialization();
 
+  if( !m_injectionTemperatureTableName.empty() )
+  {
+    GEOS_THROW_IF( m_injectionTemperature >= 0,
+                   this->getDataContext() << ": " << injectionStreamKey::injectionTemperatureString() << " and "
+                                          << injectionStreamKey::injectionTemperatureTableNameString() << " cannot be specified together",
+                   InputError );
+    FunctionManager & functionManager = FunctionManager::getInstance();
+    m_injectionTemperatureTable = &(functionManager.getGroup< TableFunction const >( m_injectionTemperatureTableName ));
+  }
+
 // Validate the injection stream and temperature
   validateInjectionStream(  );
 
 }
+
+template< typename ConstraintRateType >
+void InjectionConstraint< ConstraintRateType >::setNextDtFromTables( real64 const currentTime, real64 & nextDt ) const
+{
+  ConstraintRateType::setNextDtFromTables( currentTime, nextDt );
+  WellConstraintBase::setNextDtFromTable( m_injectionTemperatureTable, currentTime, nextDt );
+}
 template< typename ConstraintRateType >
 void InjectionConstraint< ConstraintRateType >::validateInjectionStream( )
 {
-  GEOS_THROW_IF( (m_injectionStream.empty()  && m_injectionTemperature >= 0) ||
-                 (!m_injectionStream.empty() && m_injectionTemperature < 0),
+  bool const hasTemperature = m_injectionTemperature >= 0 || m_injectionTemperatureTable != nullptr;
+  GEOS_THROW_IF( (m_injectionStream.empty()  && hasTemperature) ||
+                 (!m_injectionStream.empty() && !hasTemperature),
                  this->getName() << " "  <<  this->getDataContext() << ": Both "
                                  <<  injectionStreamKey::injectionStreamString() << " and " <<  injectionStreamKey::injectionTemperatureString()
                                  << " must be specified for multiphase simulations",

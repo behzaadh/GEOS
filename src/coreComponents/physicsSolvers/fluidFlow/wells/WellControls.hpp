@@ -469,9 +469,10 @@ public:
 
   /**
    * @brief Const accessor for the temperature of the injection stream
+   * @param[in] time the time at which the temperature is evaluated
    * @return the temperature of the injection stream
    */
-  real64 getInjectionTemperature() const;
+  real64 getInjectionTemperature( real64 const time ) const;
 
   /**
    * @brief Const accessor for the  injection stream

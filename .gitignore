@@ -1,10 +1,13 @@
 /build*/
+/localTests*/
+/CoolProp*/
 /install*/
 .cproject
 .project
 .pydevproject
 .settings
 .idea/
+.venv/
 *.swp
 *.swo
 *.swn
@@ -20,6 +23,7 @@
 uberenv_libs
 spack-*.txt
 /src/docs/sphinx/datastructure
+/scripts/myScript/
 *~
 __pycache__
 

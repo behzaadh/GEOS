@@ -27,14 +27,13 @@ namespace constitutive
 {
 
 ModifiedCamClay::ModifiedCamClay( string const & name, Group * const parent ):
-  ElasticIsotropicPressureDependent( name, parent )
+   ElasticIsotropic( name, parent )
 {
   // register default values
-
-  registerWrapper( viewKeyStruct::defaultVirginCompressionIndexString(), &m_defaultVirginCompressionIndex ).
-    setApplyDefaultValue( 5e-3 ).
+  registerWrapper( viewKeyStruct::defaultHardeningString(), &m_defaultHardening ).
+    setApplyDefaultValue( 2e-3 ).
     setInputFlag( InputFlags::OPTIONAL ).
-    setDescription( "Virgin compression index" );
+    setDescription( "Recompresion Index" );
 
   registerWrapper( viewKeyStruct::defaultCslSlopeString(), &m_defaultCslSlope ).
     setApplyDefaultValue( 1.0 ).
@@ -46,9 +45,8 @@ ModifiedCamClay::ModifiedCamClay( string const & name, Group * const parent ):
     setInputFlag( InputFlags::OPTIONAL ).
     setDescription( "Initial preconsolidation pressure" );
 
-  // register fields
-
-  registerField< fields::solid::virginCompressionIndex >( &m_virginCompressionIndex );
+    // register fields
+  registerField< fields::solid::hardening >( &m_hardening );
 
   registerField< fields::solid::cslSlope >( &m_cslSlope );
 
@@ -63,25 +61,22 @@ void ModifiedCamClay::allocateConstitutiveData( Group & parent, localIndex const
   m_newPreConsolidationPressure.resize( 0, numPts );
   m_oldPreConsolidationPressure.resize( 0, numPts );
 
-  ElasticIsotropicPressureDependent::allocateConstitutiveData( parent, numPts );
+ ElasticIsotropic::allocateConstitutiveData( parent, numPts );
 }
 
 void ModifiedCamClay::postInputInitialization()
 {
-  ElasticIsotropicPressureDependent::postInputInitialization();
+  ElasticIsotropic::postInputInitialization();
 
   GEOS_THROW_IF( m_defaultCslSlope <= 0,
                  "Non-positive slope of critical state line detected",
                  InputError, getDataContext() );
-  GEOS_THROW_IF( m_defaultVirginCompressionIndex <= 0,
-                 "Non-positive virgin compression index detected",
-                 InputError, getDataContext() );
-  GEOS_THROW_IF( m_defaultVirginCompressionIndex <= m_defaultRecompressionIndex,
-                 "Recompression index should exceed virgin recompression index",
+  GEOS_THROW_IF(  m_defaultHardening <= 0,
+                 "Non-positive hardening detected",
                  InputError, getDataContext() );
   GEOS_THROW_IF( m_defaultPreConsolidationPressure >= 0,
                  "Preconsolidation pressure must be negative",
-                 InputError, getDataContext() );
+                 InputError, getDataContext() );              
 
   // set results as array default values
 
@@ -91,8 +86,8 @@ void ModifiedCamClay::postInputInitialization()
   getField< fields::solid::preConsolidationPressure >().
     setApplyDefaultValue( m_defaultPreConsolidationPressure );
 
-  getField< fields::solid::virginCompressionIndex >().
-    setApplyDefaultValue( m_defaultVirginCompressionIndex );
+  getField< fields::solid::hardening >().
+    setApplyDefaultValue( m_defaultHardening );
 
   getField< fields::solid::cslSlope >().
     setApplyDefaultValue( m_defaultCslSlope );

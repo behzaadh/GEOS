@@ -90,7 +90,8 @@ KValueFlashModel< NUM_PHASE >::createKernelWrapper() const
                         *pressureTable,
                         *temperatureTable,
                         m_presentComponents,
-                        m_parameters->m_kValueHyperCube );
+                        m_parameters->m_kValueHyperCube,
+                        m_parameters->m_steamTableWaterIndex );
 }
 
 template< integer NUM_PHASE >
@@ -101,7 +102,8 @@ KValueFlashModelUpdate< NUM_PHASE >::KValueFlashModelUpdate( integer const numCo
                                                              TableFunction const & pressureTable,
                                                              TableFunction const & temperatureTable,
                                                              arrayView1d< integer const > const & presentComponents,
-                                                             arrayView4d< real64 const > const & kValues ):
+                                                             arrayView4d< real64 const > const & kValues,
+                                                             integer const steamTableWaterIndex ):
   m_liquidIndex( liquidIndex ),
   m_vapourIndex( vapourIndex ),
   m_aquoesIndex( aqueousIndex ),
@@ -111,7 +113,8 @@ KValueFlashModelUpdate< NUM_PHASE >::KValueFlashModelUpdate( integer const numCo
   m_pressureTable( pressureTable.createKernelWrapper()),
   m_temperatureTable( temperatureTable.createKernelWrapper()),
   m_presentComponents( presentComponents ),
-  m_kValues( kValues )
+  m_kValues( kValues ),
+  m_steamTableWaterIndex( steamTableWaterIndex )
 {}
 
 template< integer NUM_PHASE >

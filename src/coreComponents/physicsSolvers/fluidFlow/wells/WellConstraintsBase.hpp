@@ -240,7 +240,7 @@ protected:
    * @param[in] currentTime the current time
    * @param[inout] nextDt the time step
    */
-  void setNextDtFromTables( real64 const currentTime, real64 & nextDt ) const;
+  virtual void setNextDtFromTables( real64 const currentTime, real64 & nextDt ) const;
 
 
 protected:

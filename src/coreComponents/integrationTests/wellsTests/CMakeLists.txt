@@ -12,7 +12,8 @@ set( gtest_geosx_tests
           testThermalInjWell.cpp
           testThermalProdWell.cpp
           testThermalReservoirCompositionalMultiphaseSSWells.cpp 
-          testThermalReservoirCompositionalMultiphaseMSWells.cpp )
+          testThermalReservoirCompositionalMultiphaseMSWells.cpp
+          testThermalKValueReservoirMSWells.cpp )
 
 set( tplDependencyList ${parallelDeps} gtest )
 

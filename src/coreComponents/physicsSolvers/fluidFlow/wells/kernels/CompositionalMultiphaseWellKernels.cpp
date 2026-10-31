@@ -300,7 +300,7 @@ PresTempCompFracInitializationKernel::
   else
   {
     // use temperature from injection stream
-    avgTemp = wellControls.getInjectionTemperature();
+    avgTemp = wellControls.getInjectionTemperature( currentTime );
 
     // use comp frac from injection stream
     for( integer ic = 0; ic < numComps; ++ic )

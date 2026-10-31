@@ -102,6 +102,8 @@ public:
     static constexpr char const * injectionStreamString() { return "injectionStream"; }
     /// String key for the well injection temperature
     static constexpr char const * injectionTemperatureString() { return "injectionTemperature"; }
+    /// String key for the well injection temperature table
+    static constexpr char const * injectionTemperatureTableNameString() { return "injectionTemperatureTableName"; }
   };
 
   /**
@@ -112,9 +114,13 @@ public:
 
   /**
    * @brief Const accessor for the temperature of the injection stream
+   * @param[in] time the time at which the temperature is evaluated
    * @return the temperature of the injection stream
    */
-  real64 getInjectionTemperature() const { return m_injectionTemperature; }
+  real64 getInjectionTemperature( real64 const time ) const
+  {
+    return m_injectionTemperatureTable ? m_injectionTemperatureTable->evaluate( &time ) : m_injectionTemperature;
+  }
 
   /**
    * @brief Set composition of the injection stream
@@ -131,6 +137,9 @@ public:
 protected:
 
   virtual void postInputInitialization() override;
+
+  virtual void setNextDtFromTables( real64 const currentTime, real64 & nextDt ) const override;
+
   static bool isViolated( const real64 & currentValue, const real64 & constraintValue )
   { return currentValue > constraintValue; }
 
@@ -142,6 +151,12 @@ private:
 
   /// Temperature at the injector
   real64 m_injectionTemperature;
+
+  /// Name of the injection temperature versus time table
+  string m_injectionTemperatureTableName;
+
+  /// Injection temperature versus time
+  TableFunction const * m_injectionTemperatureTable = nullptr;
 
 };
 

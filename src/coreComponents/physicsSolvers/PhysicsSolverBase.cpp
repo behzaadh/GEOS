@@ -1105,6 +1105,15 @@ bool PhysicsSolverBase::solveNonlinearSystem( real64 const & time_n,
           break;
         }
       }
+      else if( residualNorm < newtonTol && newtonIter >= minNewtonIter )
+      {
+        // Line search undoes part of the previous update and reassembles. If that already
+        // meets the nonlinear tolerance, accept convergence instead of taking another
+        // undamped Newton step that can recreate a non-smooth residual (observed as a
+        // sticky Rvol oscillation on thermal compositional cases).
+        isNewtonConverged = true;
+        break;
+      }
     }
 
     {

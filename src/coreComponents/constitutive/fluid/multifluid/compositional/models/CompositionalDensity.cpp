@@ -37,6 +37,14 @@ CompositionalDensity::CompositionalDensity( string const & name,
   string const eosName = equationOfState->m_equationsOfStateNames[phaseIndex];
   m_equationOfState = EnumStrings< EquationOfStateType >::fromString( eosName );
 
+  // Prefer the phase-labeled cubic root (same rule as CompositionalEnthalpy) when phase
+  // types are available. Unit tests that skip post-input init keep AUTO.
+  if( phaseIndex >= 0 && static_cast< localIndex >( phaseIndex ) < equationOfState->m_phaseTypes.size() )
+  {
+    m_selectedRoot = CompositionalDensityUpdate::selectedRootFromPhaseType(
+      equationOfState->m_phaseTypes[phaseIndex] );
+  }
+
   // Calculate the dimensional volume shift
   m_componentDimensionalVolumeShift.resize( componentProperties.getNumberOfComponents());
   calculateDimensionalVolumeShift( componentProperties,
@@ -47,7 +55,7 @@ CompositionalDensity::CompositionalDensity( string const & name,
 CompositionalDensity::KernelWrapper
 CompositionalDensity::createKernelWrapper() const
 {
-  return KernelWrapper( m_componentDimensionalVolumeShift, m_equationOfState );
+  return KernelWrapper( m_componentDimensionalVolumeShift, m_equationOfState, m_selectedRoot );
 }
 
 std::unique_ptr< ModelParameters >

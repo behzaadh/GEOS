@@ -140,11 +140,19 @@ initializePreSubGroups()
 
   bool const isThermalFlow = flowSolver->getReference< integer >( SinglePhaseBase::viewKeyStruct::isThermalString() );
   bool const isThermalWell = Base::wellSolver()->template getReference< integer >( WellManager::viewKeyStruct::isThermalString() );
-  GEOS_THROW_IF( isThermalFlow != isThermalWell,
-                 GEOS_FMT( "{}: the input flag {} must be the same in the flow and well solvers, respectively '{}' and '{}'",
-                           this->getDataContext(), SinglePhaseBase::viewKeyStruct::isThermalString(),
-                           Base::reservoirSolver()->getDataContext(), Base::wellSolver()->getDataContext() ),
+  GEOS_THROW_IF( isThermalWell && !isThermalFlow,
+                 GEOS_FMT( "Well solver '{}' has {}=1 but reservoir solver '{}' has {}=0. "
+                           "A thermal well requires a thermal reservoir (energy equation) to couple into.",
+                           Base::wellSolver()->getName(),
+                           WellManager::viewKeyStruct::isThermalString(),
+                           Base::reservoirSolver()->getName(),
+                           SinglePhaseBase::viewKeyStruct::isThermalString() ),
                  InputError, this->getDataContext(), Base::reservoirSolver()->getDataContext(), Base::wellSolver()->getDataContext() );
+
+  // Coupling sparsity on the reservoir side must match the reservoir DOF layout,
+  // which is independent of the well isThermal flag.
+  Base::wellSolver()->setNumDofPerResElement( flowSolver->numberOfDofsPerCell() );
+
   DomainPartition & domain = this->template getGroupByPath< DomainPartition >( "/Problem/domain" );
 
   this->template forDiscretizationOnMeshTargets<>( domain.getMeshBodies(), [&] ( string const &,

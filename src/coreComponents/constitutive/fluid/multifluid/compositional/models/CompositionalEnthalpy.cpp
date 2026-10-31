@@ -57,6 +57,11 @@ CompositionalEnthalpy::CompositionalEnthalpy( string const & name,
   m_equationOfState = EnumStrings< EquationOfStateType >::fromString( eosName );
 
   integer const numPhases = m_heatCapacityCoefficients->m_phaseTypes.size();
+  GEOS_ERROR_IF( numPhases <= phaseIndex,
+                 GEOS_FMT( "{}: heat-capacity phase types are not initialized (size {}, phase index {}). "
+                           "This usually means CompositionalEnthalpy was constructed before "
+                           "HeatCapacityCoefficients::postInputInitialization().",
+                           name, numPhases, phaseIndex ) );
 
   m_phaseType = m_heatCapacityCoefficients->m_phaseTypes[phaseIndex];
   for( integer ip = 0; ip < numPhases; ip++ )

@@ -368,9 +368,10 @@ CompositionalMultiphaseFluidUpdates< FLASH, PHASES... >::compute(
   // 5. Calculate the internal energy
   if constexpr (isThermalType())
   {
+    // Enthalpy is J/mol when !m_useMass, so U = H - P/rho must use the molar density
     computeInternalEnergy( pressure,
                            phaseFraction,
-                           phaseMassDensity,
+                           m_useMass ? phaseMassDensity : phaseDensity,
                            phaseEnthalpy,
                            phaseInternalEnergy );
   }

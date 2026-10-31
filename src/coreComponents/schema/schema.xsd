@@ -7699,6 +7699,11 @@ if the table is requested to be output in the log, and it is too large, a CSV fi
 * Wilke
 * Brokaw-->
 		<xsd:attribute name="viscosityMixingRule" type="string" default="HerningZipperer" />
+		<!--waterKValueModel => Source of the vapour k-value of the water component (the component named H2O). Valid options:
+* Table
+* SteamTable
+With SteamTable the entry of the water component in the vapour k-value tables is ignored and K = Psat(T)/P is used (IAPWS-IF97 saturation pressure). For three phases it is multiplied by the aqueous k-value of water, because all k-values are relative to the liquid phase.-->
+		<xsd:attribute name="waterKValueModel" type="string" default="Table" />
 		<!--name => A name is required for any non-unique nodes-->
 		<xsd:attribute name="name" type="groupName" use="required" />
 	</xsd:complexType>
@@ -7743,6 +7748,11 @@ if the table is requested to be output in the log, and it is too large, a CSV fi
 * Wilke
 * Brokaw-->
 		<xsd:attribute name="viscosityMixingRule" type="string" default="HerningZipperer" />
+		<!--waterKValueModel => Source of the vapour k-value of the water component (the component named H2O). Valid options:
+* Table
+* SteamTable
+With SteamTable the entry of the water component in the vapour k-value tables is ignored and K = Psat(T)/P is used (IAPWS-IF97 saturation pressure). For three phases it is multiplied by the aqueous k-value of water, because all k-values are relative to the liquid phase.-->
+		<xsd:attribute name="waterKValueModel" type="string" default="Table" />
 		<!--waterCompressibility => The compressibility of pure water.-->
 		<xsd:attribute name="waterCompressibility" type="real64" default="4.5e-10" />
 		<!--name => A name is required for any non-unique nodes-->

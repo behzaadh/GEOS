@@ -21,6 +21,7 @@
 #define GEOS_CONSTITUTIVE_FLUID_MULTIFLUID_COMPOSITIONAL_PARAMETERS_KVALUEFLASHPARAMETERS_HPP_
 
 #include "PressureTemperatureCoordinates.hpp"
+#include "common/format/EnumStrings.hpp"
 
 namespace geos
 {
@@ -32,6 +33,17 @@ namespace constitutive
 
 namespace compositional
 {
+
+/// Source of the vapour K-value of the water component
+enum class WaterKValueModel : integer
+{
+  Table,
+  SteamTable
+};
+
+ENUM_STRINGS( WaterKValueModel,
+              "Table",
+              "SteamTable" );
 
 /**
  * @brief Manages the parameters and data structures required for K-Value based
@@ -86,8 +98,16 @@ public:
    */
   array4d< real64 > m_kValueHyperCube;
 
+  /// Water K-value model (input)
+  string m_waterKValueModel{ EnumStrings< WaterKValueModel >::toString( WaterKValueModel::Table ) };
+
+  /// Index of the water component whose vapour K-value is computed from the steam table, or -1
+  integer m_steamTableWaterIndex{-1};
+
   struct viewKeyStruct : public PressureTemperatureCoordinates::viewKeyStruct
   {
+    static constexpr char const * waterKValueModelString() { return "waterKValueModel"; }
+    static constexpr char const * steamTableWaterIndexString() { return "steamTableWaterIndex"; }
     static constexpr char const * kValueTablesString() { return "kValueTables"; }
     static constexpr char const * kValuePressureCoordinatesString() { return "kValuePressureCoordinates"; }
     static constexpr char const * kValueTemperatureCoordinatesString() { return "kValueTemperatureCoordinates"; }

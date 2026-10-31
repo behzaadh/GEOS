@@ -254,7 +254,8 @@ computeCompressibilityFactorAndDerivs( integer const numComps,
                                        ComponentProperties::KernelWrapper const & componentProperties,
                                        real64 const & salinity,
                                        real64 & compressibilityFactor,
-                                       arraySlice1d< real64, USD2 > const & compressibilityFactorDerivs )
+                                       arraySlice1d< real64, USD2 > const & compressibilityFactorDerivs,
+                                       typename CubicModel::SelectedRoot const selectedRoot )
 {
   // Step 1: Allocate the stack memory needed for the update
   StackVariables< true > stack( numComps );
@@ -274,7 +275,8 @@ computeCompressibilityFactorAndDerivs( integer const numComps,
     composition,
     stack,
     compressibilityFactor,
-    compressibilityFactorDerivs );
+    compressibilityFactorDerivs,
+    selectedRoot );
 }
 
 template< typename EOS_TYPE >

@@ -18,6 +18,8 @@
  */
 
 #include "KValueFlashParameters.hpp"
+#include "ComponentProperties.hpp"
+#include "ComponentType.hpp"
 #include "constitutive/fluid/multifluid/MultiFluidBase.hpp"
 
 #include "functions/FunctionManager.hpp"
@@ -26,6 +28,8 @@
 #include "functions/SymbolicFunction.hpp"
 #include "functions/CompositeFunction.hpp"
 #endif
+
+#include "constitutive/fluid/multifluid/compositional/functions/WaterSaturationPressure.hpp"
 
 #include "common/Units.hpp"
 #include "common/MpiWrapper.hpp"
@@ -64,7 +68,18 @@ void KValueFlashParameters< NUM_PHASE >::registerParametersImpl( MultiFluidBase 
     setInputFlag( dataRepository::InputFlags::REQUIRED ).
     setDescription( "List of k-value tables for each phase." );
 
+  fluid->registerWrapper( viewKeyStruct::waterKValueModelString(), &m_waterKValueModel ).
+    setInputFlag( dataRepository::InputFlags::OPTIONAL ).
+    setApplyDefaultValue( EnumStrings< WaterKValueModel >::toString( WaterKValueModel::Table ) ).
+    setDescription( "Source of the vapour k-value of the water component (the component named H2O). Valid options:\n* " +
+                    EnumStrings< WaterKValueModel >::concat( "\n* " ) +
+                    "\nWith SteamTable the entry of the water component in the vapour k-value tables is ignored "
+                    "and K = Psat(T)/P is used (IAPWS-IF97 saturation pressure). For three phases it is multiplied "
+                    "by the aqueous k-value of water, because all k-values are relative to the liquid phase." );
+
   // Register extra wrappers to enable auto-cloning
+  fluid->registerWrapper( viewKeyStruct::steamTableWaterIndexString(), &m_steamTableWaterIndex )
+    .setRestartFlags( dataRepository::RestartFlags::NO_WRITE );
   fluid->registerWrapper( viewKeyStruct::kValuePressureCoordinatesString(), &m_pressureValues )
     .setSizedFromParent( 0 )
     .setRestartFlags( dataRepository::RestartFlags::NO_WRITE );
@@ -95,10 +110,31 @@ void KValueFlashParameters< NUM_PHASE >::postInputInitializationImpl( MultiFluid
                         "invalid number of k-value tables provided.",
                         InputError, fluid->getDataContext() );
 
+  m_steamTableWaterIndex = -1;
+  if( EnumStrings< WaterKValueModel >::fromString( m_waterKValueModel ) == WaterKValueModel::SteamTable )
+  {
+    arrayView1d< integer const > const componentTypes = componentProperties.getComponentType();
+    for( integer ic = 0; ic < numFluidComponent && m_steamTableWaterIndex < 0; ++ic )
+    {
+      if( isComponentType( componentTypes[ic], ComponentType::Water ) )
+      {
+        m_steamTableWaterIndex = ic;
+      }
+    }
+    GEOS_THROW_IF( m_steamTableWaterIndex < 0,
+                   GEOS_FMT( "{}=SteamTable requires a water component named H2O.", viewKeyStruct::waterKValueModelString() ),
+                   InputError, fluid->getDataContext() );
+  }
+
   // Check that the tables exist and are 2D
   FunctionManager & functionManager = FunctionManager::getInstance();
   for( integer tableIndex = 0; tableIndex < numTables; ++tableIndex )
   {
+    // The vapour k-value of water is computed from the steam table, so its table is a placeholder
+    if( tableIndex == m_steamTableWaterIndex )
+    {
+      continue;
+    }
     string const functionName = m_kValueTables[tableIndex];
     FunctionBase * function = functionManager.getGroupPointer< FunctionBase >( functionName );
     GEOS_THROW_IF( function == nullptr,
@@ -231,7 +267,7 @@ void KValueFlashParameters< NUM_PHASE >::generateHyperCube( integer const numCom
         string const tableName = m_kValueTables[tableIndex];
         tableFunction = functionManager.getGroupPointer< TableFunction >( tableName );
 
-        if( tableFunction == nullptr )
+        if( tableFunction == nullptr || tableIndex == m_steamTableWaterIndex )
         {
           continue;
         }
@@ -329,6 +365,10 @@ void KValueFlashParameters< NUM_PHASE >::generateHyperCube( integer const numCom
     for( integer compIndex = 0; compIndex < numComps; ++compIndex )
     {
       integer const tableIndex = numComps*phaseIndex + compIndex;
+      if( tableIndex == m_steamTableWaterIndex )
+      {
+        continue;
+      }
       string const tableName = m_kValueTables[tableIndex];
       FunctionBase const * function = functionManager.getGroupPointer< FunctionBase >( tableName );
 
@@ -343,6 +383,25 @@ void KValueFlashParameters< NUM_PHASE >::generateHyperCube( integer const numCom
           real64 const kv = function->evaluate( lookupValue );
           m_kValueHyperCube( phaseIndex, compIndex, pressureIndex, temperatureIndex ) = kv;
         }
+      }
+    }
+  }
+
+  // Grid values of the steam-table k-value, used for validation only; the kernel evaluates it exactly
+  if( m_steamTableWaterIndex >= 0 )
+  {
+    for( integer pressureIndex = 0; pressureIndex < numPressurePoints; ++pressureIndex )
+    {
+      for( integer temperatureIndex = 0; temperatureIndex < numTemperaturePoints; ++temperatureIndex )
+      {
+        real64 dPsat = 0.0;
+        real64 const psat = WaterSaturationPressure::compute( m_temperatureValues[0][temperatureIndex], dPsat );
+        real64 kv = psat / m_pressureValues[0][pressureIndex];
+        if( numPhases == 3 )
+        {
+          kv *= m_kValueHyperCube( 1, m_steamTableWaterIndex, pressureIndex, temperatureIndex );
+        }
+        m_kValueHyperCube( 0, m_steamTableWaterIndex, pressureIndex, temperatureIndex ) = kv;
       }
     }
   }

@@ -22,6 +22,7 @@
 
 #include "FunctionBase.hpp"
 #include "constitutive/fluid/multifluid/compositional/parameters/EquationOfState.hpp"
+#include "constitutive/fluid/multifluid/compositional/parameters/PhaseType.hpp"
 
 #include "constitutive/fluid/multifluid/MultiFluidUtils.hpp"
 #include "constitutive/fluid/multifluid/MultiFluidConstants.hpp"
@@ -41,10 +42,14 @@ namespace compositional
 class CompositionalDensityUpdate final : public FunctionBaseUpdate
 {
 public:
+  using SelectedRoot = CubicEOSPhaseModel< PengRobinsonEOS >::SelectedRoot;
+
   CompositionalDensityUpdate( arrayView1d< real64 const > const & volumeShift,
-                              EquationOfStateType const equationOfState )
+                              EquationOfStateType const equationOfState,
+                              SelectedRoot const selectedRoot )
     : m_componentDimensionalVolumeShift( volumeShift ),
-    m_equationOfState( equationOfState )
+    m_equationOfState( equationOfState ),
+    m_selectedRoot( selectedRoot )
   {}
 
   template< integer USD1, integer USD2 >
@@ -70,11 +75,25 @@ public:
                                 EquationOfStateType const equationOfState,
                                 real64 const & salinity,
                                 real64 & compressibilityFactor,
-                                arraySlice1d< real64, USD2 > const & compressibilityFactorDerivs );
+                                arraySlice1d< real64, USD2 > const & compressibilityFactorDerivs,
+                                SelectedRoot const selectedRoot = SelectedRoot::AUTO );
+
+  /**
+   * @brief Map phase type to the cubic-EOS root used for density (and enthalpy).
+   * @details Vapour uses the light (largest-Z) root; oil and aqueous use the dense (smallest-Z) root.
+   *          This must match CompositionalEnthalpy so that U = H - P/ρ is thermodynamically consistent.
+   */
+  GEOS_HOST_DEVICE
+  GEOS_FORCE_INLINE
+  static SelectedRoot selectedRootFromPhaseType( PhaseType const phaseType )
+  {
+    return phaseType == PhaseType::VAPOUR ? SelectedRoot::MAXIMUM : SelectedRoot::MINIMUM;
+  }
 
 private:
   arrayView1d< real64 const > m_componentDimensionalVolumeShift;
   EquationOfStateType const m_equationOfState;
+  SelectedRoot const m_selectedRoot;
 };
 
 class CompositionalDensity : public FunctionBase
@@ -112,6 +131,7 @@ private:
 private:
   array1d< real64 > m_componentDimensionalVolumeShift;
   EquationOfStateType m_equationOfState;
+  CompositionalDensityUpdate::SelectedRoot m_selectedRoot{ CompositionalDensityUpdate::SelectedRoot::AUTO };
 };
 
 template< integer USD1, integer USD2 >
@@ -143,7 +163,8 @@ void CompositionalDensityUpdate::compute(
                                 m_equationOfState,
                                 0.0,
                                 compressibilityFactor,
-                                tempDerivs.toSlice() );
+                                tempDerivs.toSlice(),
+                                m_selectedRoot );
 
   CompositionalProperties::computeMolarDensity( numComps,
                                                 pressure,
@@ -174,8 +195,12 @@ void CompositionalDensityUpdate::computeCompressibilityFactor( integer const num
                                                                EquationOfStateType const equationOfState,
                                                                real64 const & salinity,
                                                                real64 & compressibilityFactor,
-                                                               arraySlice1d< real64, USD2 > const & compressibilityFactorDerivs )
+                                                               arraySlice1d< real64, USD2 > const & compressibilityFactorDerivs,
+                                                               SelectedRoot const selectedRoot )
 {
+  // SelectedRoot is nested per CubicEOSPhaseModel instantiation; values match across EOS types.
+  integer const selectedRootValue = static_cast< integer >( selectedRoot );
+
   if( equationOfState == EquationOfStateType::PengRobinson )
   {
     CubicEOSPhaseModel< PengRobinsonEOS >::
@@ -185,10 +210,12 @@ void CompositionalDensityUpdate::computeCompressibilityFactor( integer const num
                                            composition,
                                            componentProperties,
                                            compressibilityFactor,
-                                           compressibilityFactorDerivs );
+                                           compressibilityFactorDerivs,
+                                           selectedRoot );
   }
   else if( equationOfState == EquationOfStateType::SoaveRedlichKwong )
   {
+    using SRKRoot = typename CubicEOSPhaseModel< SoaveRedlichKwongEOS >::SelectedRoot;
     CubicEOSPhaseModel< SoaveRedlichKwongEOS >::
     computeCompressibilityFactorAndDerivs( numComps,
                                            pressure,
@@ -196,10 +223,12 @@ void CompositionalDensityUpdate::computeCompressibilityFactor( integer const num
                                            composition,
                                            componentProperties,
                                            compressibilityFactor,
-                                           compressibilityFactorDerivs );
+                                           compressibilityFactorDerivs,
+                                           static_cast< SRKRoot >( selectedRootValue ) );
   }
   else if( equationOfState == EquationOfStateType::SoreideWhitson )
   {
+    using SWRoot = typename SoreideWhitsonEOSPhaseModel< PengRobinsonEOS >::CubicModel::SelectedRoot;
     SoreideWhitsonEOSPhaseModel< PengRobinsonEOS >::
     computeCompressibilityFactorAndDerivs( numComps,
                                            pressure,
@@ -208,7 +237,8 @@ void CompositionalDensityUpdate::computeCompressibilityFactor( integer const num
                                            componentProperties,
                                            salinity,
                                            compressibilityFactor,
-                                           compressibilityFactorDerivs );
+                                           compressibilityFactorDerivs,
+                                           static_cast< SWRoot >( selectedRootValue ) );
   }
 }
 

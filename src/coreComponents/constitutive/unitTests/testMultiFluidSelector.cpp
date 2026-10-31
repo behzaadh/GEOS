@@ -45,6 +45,10 @@ using MultiFluidSelectorTestBlackOilFluid = MultiFluidSelectorTest< BlackOilFlui
 using MultiFluidSelectorTestDeadOilFluid = MultiFluidSelectorTest< DeadOilFluid >;
 using MultiFluidSelectorTestCO2BrinePhillipsThermalFluid = MultiFluidSelectorTest< CO2BrinePhillipsThermalFluid >;
 using MultiFluidSelectorTestCompositionalTwoPhaseConstantViscosity = MultiFluidSelectorTest< CompositionalTwoPhaseConstantViscosity >;
+using MultiFluidSelectorTestCompositionalTwoPhaseKValueThermalFluidLohrenzBrayClark =
+  MultiFluidSelectorTest< CompositionalTwoPhaseKValueThermalFluidLohrenzBrayClark >;
+using MultiFluidSelectorTestCompositionalThreePhaseKValueThermalFluidLohrenzBrayClark =
+  MultiFluidSelectorTest< CompositionalThreePhaseKValueThermalFluidLohrenzBrayClark >;
 
 TEST_F( MultiFluidSelectorTestBlackOilFluid, testValidComponents )
 {
@@ -199,4 +203,24 @@ TEST_F( MultiFluidSelectorTestCompositionalTwoPhaseConstantViscosity, testFluidS
     EXPECT_NE( message.find( GEOS_FMT( "storage capacity of {}", MultiFluidBase::MAX_NUM_COMPONENTS ) ), string::npos );
     EXPECT_NE( message.find( GEOS_FMT( "GEOS_MAX_FLUID_COMPONENTS={}", GEOS_MAX_FLUID_COMPONENTS ) ), string::npos );
   }
+}
+
+TEST_F( MultiFluidSelectorTestCompositionalTwoPhaseKValueThermalFluidLohrenzBrayClark, testThermal )
+{
+  bool isExecuted = false;
+  constitutiveComponentUpdatePassThru< true >( getFluid(), 3, [&]( auto &, auto )
+  {
+    isExecuted = true;
+  } );
+  EXPECT_TRUE( isExecuted );
+}
+
+TEST_F( MultiFluidSelectorTestCompositionalThreePhaseKValueThermalFluidLohrenzBrayClark, testThermal )
+{
+  bool isExecuted = false;
+  constitutiveComponentUpdatePassThru< true >( getFluid(), 4, [&]( auto &, auto )
+  {
+    isExecuted = true;
+  } );
+  EXPECT_TRUE( isExecuted );
 }

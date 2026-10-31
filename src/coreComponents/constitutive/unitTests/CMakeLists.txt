@@ -27,6 +27,7 @@ set( gtest_geosx_tests
      testMultiFluidThreePhaseCompositionalMultiphase.cpp
      testMultiFluidTwoPhaseCompositionalMultiphase.cpp
      testMultiFluidDeadOil.cpp
+     testMultiFluidKValueThermal.cpp
      testMultiFluidSelector.cpp
      testNegativeTwoPhaseFlash.cpp
      testNegativeTwoPhaseFlash9Comp.cpp
@@ -37,6 +38,7 @@ set( gtest_geosx_tests
      testRelPermHysteresis.cpp
      testSoreideWhitsonEOSPhaseModel.cpp
      testSoreideWhitsonFlash.cpp
+     testWaterSaturationPressure.cpp
      testStabilityTest2Comp.cpp
      testStabilityTest9Comp.cpp
      testRachfordRice.cpp

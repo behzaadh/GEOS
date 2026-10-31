@@ -4,6 +4,7 @@ set( gtest_geosx_tests
      testCompMultiphaseFlowHybrid.cpp
      testCompositionalMultiPhaseMFDPolyhedral.cpp
      testThermalCompMultiphaseFlow.cpp
+     testThermalKValueCompMultiphaseFlow.cpp
      testThermalSinglePhaseFlow.cpp
      testTransmissibility.cpp
      testImmiscibleMultiphaseFlow.cpp

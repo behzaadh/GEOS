@@ -1142,23 +1142,9 @@ public:
 
         stack.localResidual[numRows-1]=0.0;
       }
-      else if( ei == m_iwelemControl && !m_isProducer )
-      {
-        // For top segment energy balance eqn replaced with  T(n+1) - T = 0
-        // No other energy balance derivatives
-        // Assumption is global index == 0 is top segment with fixed temp BC
-
-        for( integer i=0; i < numComp+1+IS_THERMAL; i++ )
-        {
-          stack.localJacobian[numRows-1][i] = 0.0;
-        }
-        // constant Temperature
-        for( integer i=0; i < numComp+1+IS_THERMAL; i++ )
-          stack.localJacobian[i][numRows-1]  = 0.0;
-        stack.localJacobian[numRows-1][numRows-1] = 1.0;
-
-        stack.localResidual[numRows-1]=0.0;
-      }
+      // When thermal effects are enabled, keep the energy balance for all segments
+      // (injectors and producers), including the top control element.
+      GEOS_UNUSED_VAR( ei );
     }
 
     if( m_kernelFlags.isSet( isothermalCompositionalMultiphaseBaseKernels::KernelFlags::TotalMassEquation ) )

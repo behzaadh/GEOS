@@ -60,9 +60,9 @@ public:
     GEOS_UNUSED_VAR( temperature );
 
     // TODO use full exponential.
-//    porosity            =  referencePorosity * exp( m_compressibility * (pressure - m_referencePressure) );
+   porosity            =  referencePorosity * exp( m_compressibility * (pressure - m_referencePressure) );
 //    dPorosity_dPressure =  m_compressibility * porosity;
-    porosity = referencePorosity * ( m_compressibility * (pressure - m_referencePressure) + 1 );
+    // porosity = referencePorosity * ( m_compressibility * (pressure - m_referencePressure) + 1 );
     dPorosity_dPressure = m_compressibility * referencePorosity;
     dPorosity_dTemperature = 0.0;
   }

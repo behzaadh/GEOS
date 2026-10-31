@@ -74,6 +74,17 @@ CompositionalMultiphaseFluid( string const & name, Group * const parent )
   registerWrapper( "componentType", &m_componentProperties->m_componentType )
     .setSizedFromParent( 0 )
     .setRestartFlags( RestartFlags::NO_WRITE );
+
+  if constexpr ( isThermalType() )
+  {
+    getField< fields::multifluid::phaseEnthalpy >().
+      setPlotLevel( dataRepository::PlotLevel::LEVEL_0 ).
+      setRestartFlags( RestartFlags::WRITE_AND_READ );
+
+    getField< fields::multifluid::phaseInternalEnergy >().
+      setPlotLevel( dataRepository::PlotLevel::LEVEL_0 ).
+      setRestartFlags( RestartFlags::WRITE_AND_READ );
+  }
 }
 
 template< typename FLASH, typename ... PHASES >
@@ -97,7 +108,8 @@ string CompositionalMultiphaseFluid< FLASH, PHASES... >::catalogName()
   // Use the first phase viscosity
   using FirstPhase = typename camp::at< camp::list< PHASES... >, camp::num< 0 > >::type;
   using ViscosityType = typename FirstPhase::Viscosity;
-  return GEOS_FMT( "Compositional{}Fluid{}", FLASH::catalogName(), ViscosityType::catalogName() );
+  string const thermalInfix = isThermalType() ? "Thermal" : "";
+  return GEOS_FMT( "Compositional{}{}Fluid{}", FLASH::catalogName(), thermalInfix, ViscosityType::catalogName() );
 }
 
 template< typename FLASH, typename ... PHASES >
@@ -217,6 +229,10 @@ CompositionalMultiphaseFluid< FLASH, PHASES... >::deliverClone( string const & n
 {
   std::unique_ptr< ConstitutiveBase > clone = MultiFluidBase::deliverClone( name, parent );
   CompositionalMultiphaseFluid & newFluid = dynamicCast< CompositionalMultiphaseFluid & >( *clone );
+  // ModelParameters stores derived state (for example enthalpy phase types) that is not
+  // registered as a wrapper, so the clone must re-run post-input initialization before models
+  // are constructed. Otherwise thermal fluids segfault in CompositionalEnthalpy.
+  newFluid.m_parameters->postInputInitialization( &newFluid, *newFluid.m_componentProperties );
   newFluid.createModels();
   return clone;
 }
@@ -272,10 +288,11 @@ template< typename FLASH, typename ... PHASES >
 template< std::size_t... Is >
 void CompositionalMultiphaseFluid< FLASH, PHASES... >::createPhaseModels( std::index_sequence< Is... > )
 {
+  // PHASES[Is] computes properties of phase m_phaseOrder[Is]; per-phase inputs are in input order
   ((camp::get< Is >( m_phases ) =
       std::make_unique< PHASES >( GEOS_FMT( "{}_PhaseModel{}", getName(), Is + 1 ),
                                   *m_componentProperties,
-                                  Is,
+                                  m_phaseOrder[Is],
                                   *m_parameters )), ...);
 }
 
@@ -328,6 +345,19 @@ template class CompositionalMultiphaseFluid<
     compositional::KValueFlashModel< 2 >,
     compositional::PhaseModel< compositional::PhillipsBrineDensity, compositional::PhillipsBrineViscosity >,
     compositional::PhaseModel< compositional::CompositionalDensity, compositional::LohrenzBrayClarkViscosity > >;
+template class CompositionalMultiphaseFluid<
+    compositional::KValueFlashModel< 2 >,
+    compositional::PhaseModel< compositional::CompositionalDensity, compositional::LohrenzBrayClarkViscosity, compositional::CompositionalEnthalpy >,
+    compositional::PhaseModel< compositional::CompositionalDensity, compositional::LohrenzBrayClarkViscosity, compositional::CompositionalEnthalpy > >;
+template class CompositionalMultiphaseFluid<
+    compositional::KValueFlashModel< 2 >,
+    compositional::PhaseModel< compositional::PhillipsBrineDensity, compositional::PhillipsBrineViscosity, compositional::CompositionalEnthalpy >,
+    compositional::PhaseModel< compositional::CompositionalDensity, compositional::LohrenzBrayClarkViscosity, compositional::CompositionalEnthalpy > >;
+template class CompositionalMultiphaseFluid<
+    compositional::KValueFlashModel< 3 >,
+    compositional::PhaseModel< compositional::CompositionalDensity, compositional::LohrenzBrayClarkViscosity, compositional::CompositionalEnthalpy >,
+    compositional::PhaseModel< compositional::CompositionalDensity, compositional::LohrenzBrayClarkViscosity, compositional::CompositionalEnthalpy >,
+    compositional::PhaseModel< compositional::CompositionalDensity, compositional::LohrenzBrayClarkViscosity, compositional::CompositionalEnthalpy > >;
 
 REGISTER_CATALOG_ENTRY( ConstitutiveBase,
                         CompositionalTwoPhaseConstantViscosity,
@@ -356,6 +386,21 @@ REGISTER_CATALOG_ENTRY( ConstitutiveBase,
 
 REGISTER_CATALOG_ENTRY( ConstitutiveBase,
                         CompositionalKValuePhillipsBrine,
+                        string const &,
+                        dataRepository::Group * const )
+
+REGISTER_CATALOG_ENTRY( ConstitutiveBase,
+                        CompositionalTwoPhaseKValueThermalFluidLohrenzBrayClark,
+                        string const &,
+                        dataRepository::Group * const )
+
+REGISTER_CATALOG_ENTRY( ConstitutiveBase,
+                        CompositionalTwoPhaseKValueThermalFluidPhillipsBrine,
+                        string const &,
+                        dataRepository::Group * const )
+
+REGISTER_CATALOG_ENTRY( ConstitutiveBase,
+                        CompositionalThreePhaseKValueThermalFluidLohrenzBrayClark,
                         string const &,
                         dataRepository::Group * const )
 

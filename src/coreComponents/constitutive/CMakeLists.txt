@@ -98,6 +98,7 @@ set( constitutive_headers
      fluid/multifluid/compositional/functions/NegativeTwoPhaseFlash_impl.hpp
      fluid/multifluid/compositional/functions/NegativeTwoPhaseFlash.hpp
      fluid/multifluid/compositional/functions/RachfordRice.hpp
+     fluid/multifluid/compositional/functions/WaterSaturationPressure.hpp
      fluid/multifluid/compositional/functions/SoreideWhitsonEOSPhaseModel_impl.hpp
      fluid/multifluid/compositional/functions/SoreideWhitsonEOSPhaseModel.hpp
      fluid/multifluid/compositional/functions/StabilityTest.hpp

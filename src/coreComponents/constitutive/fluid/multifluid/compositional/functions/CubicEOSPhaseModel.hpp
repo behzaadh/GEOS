@@ -192,7 +192,8 @@ public:
                                          arraySlice1d< real64 const, USD > const & composition,
                                          ComponentProperties::KernelWrapper const & componentProperties,
                                          real64 & compressibilityFactor,
-                                         arraySlice1d< real64 > const & compressibilityFactorDerivs );
+                                         arraySlice1d< real64 > const & compressibilityFactorDerivs,
+                                         SelectedRoot const selectedRoot = SelectedRoot::AUTO );
 
   /**
    * @brief Calculate the dimensional volume shift

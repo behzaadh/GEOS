@@ -474,7 +474,7 @@ PresTempInitializationKernel::
   else
   {
     // use temperature from injection stream
-    avgTemp = wellControls.getInjectionTemperature();
+    avgTemp = wellControls.getInjectionTemperature( currentTime );
   }
   // if the well is controlled by pressure, initialize the reference pressure at the target pressure
   if( currentControl == ConstraintTypeId::BHP )
